@@ -1,13 +1,15 @@
-import { Wifi, WifiOff, Users, MessageCircle, Share2, Globe, KeyRound, LogOut, Copy } from "lucide-react";
+import { Wifi, WifiOff, Users, MessageCircle, Share2, Globe, KeyRound, LogOut, Copy, Hash, Rss, XCircle, Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input"; // Added Input
 import { useAppStore } from "../store";
-import { useEffect } from "react";
+import { useEffect, useState } from "react"; // Added useState
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { LoadingSpinner } from "./ui/loading-spinner";
+import { NostrEvent } from "../../shared/types"; // For topic notes
 
 
 export function NetworkPanel() {
@@ -23,20 +25,22 @@ export function NetworkPanel() {
     logoutFromNostr,
     publishCurrentNoteToNostr,
     subscribeToPublicNotes,
-    unsubscribeFromNostr, // For potential cleanup
-    initializeApp, // To re-init if needed or call initializeNostr specifically
+    unsubscribeFromNostr,
     initializeNostr,
+    subscribeToTopic, // New action from store
+    topicNotes,      // New state from store
+    addTopicSubscription, // New action
+    removeTopicSubscription, // New action
+    activeTopicSubscriptions, // New state
   } = useAppStore();
 
-  // Attempt to initialize Nostr service on mount if not already handled by main app init
+  const [newTopic, setNewTopic] = useState('');
+
   useEffect(() => {
-    // initializeApp in main.tsx should call initializeNostr.
-    // This is a fallback or explicit re-check if panel is mounted/focused.
-    // Consider if this is needed if initializeApp is robust.
-    if (!userProfile?.nostrPubkey) {
+    if (!userProfile?.nostrPubkey && !loading.network) { // Check loading.network to avoid race condition
         initializeNostr();
     }
-  }, [initializeNostr, userProfile?.nostrPubkey]);
+  }, [initializeNostr, userProfile?.nostrPubkey, loading.network]);
 
   const handleToggleConnection = async () => {
     if (nostrConnected && userProfile?.nostrPubkey) {
@@ -95,6 +99,47 @@ export function NetworkPanel() {
     navigator.clipboard.writeText(text)
       .then(() => toast.success(`${type} copied to clipboard!`))
       .catch(() => toast.error(`Failed to copy ${type}.`));
+  };
+
+  const handleSubscribeToNewTopic = () => {
+    if (!newTopic.trim()) {
+      toast.error("Please enter a topic to subscribe.");
+      return;
+    }
+    if (!userProfile?.nostrPubkey) {
+      toast.error("Connect to Nostr to subscribe to topics.");
+      return;
+    }
+    const topicToSubscribe = newTopic.startsWith('#') ? newTopic : `#${newTopic}`;
+
+    // Check if already subscribed via the specific topic subscription mechanism
+    if (activeTopicSubscriptions[topicToSubscribe]) {
+        toast.info(`Already subscribed to ${topicToSubscribe}.`);
+        setNewTopic('');
+        return;
+    }
+
+    const subId = subscribeToTopic(topicToSubscribe); // This function is from the store
+    if (subId) {
+      addTopicSubscription(topicToSubscribe, subId); // Store the specific topic subscription
+      toast.success(`Subscribed to topic: ${topicToSubscribe}`);
+      setNewTopic('');
+    } else {
+      toast.error(`Failed to subscribe to topic: ${topicToSubscribe}`, { description: errors.network });
+    }
+  };
+
+  const handleUnsubscribeFromTopic = (topic: string) => {
+    const subId = activeTopicSubscriptions[topic];
+    if (subId) {
+      unsubscribeFromNostr(subId); // Use the general unsubscribe action
+      removeTopicSubscription(topic); // Remove from our specific tracking
+      toast.info(`Unsubscribed from topic: ${topic}`);
+    }
+  };
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp * 1000).toLocaleString();
   };
 
 
@@ -296,6 +341,75 @@ export function NetworkPanel() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Topic Feeds / Discussions */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Rss size={20} />
+              Topic Feeds
+            </CardTitle>
+            <CardDescription>
+              Subscribe to real-time notes from topics/hashtags on Nostr.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2 mb-4">
+              <Input
+                placeholder="Enter topic (e.g., #AI, nostr)"
+                value={newTopic}
+                onChange={(e) => setNewTopic(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubscribeToNewTopic()}
+              />
+              <Button onClick={handleSubscribeToNewTopic} disabled={!userProfile?.nostrPubkey || loading.network}>
+                <Plus size={16} className="mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Subscribe</span>
+              </Button>
+            </div>
+
+            {Object.keys(activeTopicSubscriptions).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Not subscribed to any topics yet.
+              </p>
+            )}
+
+            <div className="space-y-4">
+              {Object.entries(activeTopicSubscriptions).map(([topic, subId]) => (
+                <div key={topic}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-md font-semibold flex items-center">
+                      <Hash size={18} className="mr-1 text-primary" /> {topic}
+                    </h3>
+                    <Button variant="ghost" size="sm" onClick={() => handleUnsubscribeFromTopic(topic)}>
+                      <XCircle size={16} className="mr-1" /> Unsubscribe
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[250px] border rounded-md p-2 bg-muted/30">
+                    {(topicNotes[topic] && topicNotes[topic].length > 0) ? (
+                      topicNotes[topic].slice().reverse().map((note: NostrEvent) => ( // Show newest first
+                        <Card key={note.id} className="mb-2 p-3 shadow-sm bg-card">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                            <span>By: {note.pubkey.substring(0,10)}...</span>
+                            <span>{formatDate(note.created_at)}</span>
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap break-words line-clamp-3">
+                            {note.content || <span className="italic">No content</span>}
+                          </p>
+                          {/* TODO: Add button to view full note, potentially in a modal or new view */}
+                        </Card>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        No notes received for this topic yet, or subscription just started.
+                      </p>
+                    )}
+                  </ScrollArea>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
 
         {/* Info */}
         <Card>

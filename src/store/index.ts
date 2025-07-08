@@ -26,7 +26,7 @@ interface AppActions {
   
   // User profile actions
   updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>; // Allow partial updates
-  generateAndStoreNostrKeys: () => Promise<string | null>; // Returns new public key or null
+  generateAndStoreNostrKeys: (privateKey?: string, publicKey?: string) => Promise<string | null>; // Added optional keys
   logoutFromNostr: () => Promise<void>;
 
   // Folders actions
@@ -65,6 +65,15 @@ interface AppActions {
   addNostrRelay: (relay: string) => Promise<void>;
   removeNostrRelay: (relay: string) => Promise<void>;
   handleIncomingNostrEvent: (event: NostrEvent) => void; // Central handler for events
+
+  // DM specific actions
+  sendDirectMessage: (recipientPk: string, content: string) => Promise<void>;
+  subscribeToDirectMessages: (relays?: string[]) => string | null; // Returns subscription ID
+
+  // Topic subscription actions
+  addTopicSubscription: (topic: string, subscriptionId: string) => void;
+  removeTopicSubscription: (topic: string) => void;
+  addNoteToTopic: (topic: string, note: NostrEvent) => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -93,7 +102,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Default relays, user can override via settings
   nostrRelays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'], // This will be synced with userProfile.nostrRelays
   nostrConnected: false, // Explicitly for Nostr connection status
-  activeNostrSubscriptions: {} as NostrSubscriptionStore, // Store active subscriptions
+  activeNostrSubscriptions: {} as NostrSubscriptionStore, // General subscriptions like public notes, DMs
+
+  // New state for topic-specific subscriptions and notes
+  activeTopicSubscriptions: {}, // Maps topic string to its specific subscription ID
+  topicNotes: {}, // Maps topic string to an array of NostrEvent
   
   editorContent: '',
   isEditing: false,
@@ -574,29 +587,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ nostrConnected: status });
   },
 
-  generateAndStoreNostrKeys: async () => {
+  generateAndStoreNostrKeys: async (providedSk?: string, providedPk?: string) => {
     get().setLoading('network', true);
     let userProfile = get().userProfile;
-    const currentRelaysInStore = get().nostrRelays; // Get relays currently in store (defaults or user-set)
+    const currentRelaysInStore = get().nostrRelays;
     const defaultPrivacySettings = {
         sharePublicNotesGlobally: false,
         shareTagsWithPublicNotes: true,
         shareValuesWithPublicNotes: true,
     };
 
+    let skToStore: string;
+    let pkToStore: string;
+
     try {
-      const { privateKey, publicKey } = nostrService.generateNewKeyPair();
-      await nostrService.storeKeyPair(privateKey, publicKey);
+      if (providedSk && providedPk) {
+        skToStore = providedSk;
+        pkToStore = providedPk;
+      } else {
+        const { privateKey, publicKey } = nostrService.generateNewKeyPair();
+        skToStore = privateKey;
+        pkToStore = publicKey;
+      }
+
+      await nostrService.storeKeyPair(skToStore, pkToStore);
 
       if (userProfile) {
-        userProfile.nostrPubkey = publicKey;
+        userProfile.nostrPubkey = pkToStore;
         userProfile.nostrRelays = userProfile.nostrRelays && userProfile.nostrRelays.length > 0
             ? userProfile.nostrRelays
             : currentRelaysInStore;
         userProfile.privacySettings = userProfile.privacySettings || defaultPrivacySettings;
       } else {
         userProfile = {
-          nostrPubkey: publicKey,
+          nostrPubkey: pkToStore,
           sharedTags: [],
           preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' },
           nostrRelays: currentRelaysInStore,
@@ -611,7 +635,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         nostrRelays: userProfile.nostrRelays // Sync store's top-level relays
       });
       get().setError('network', undefined); // Clear previous errors
-      return publicKey;
+      return pkToStore;
     } catch (error: any) {
       get().setError('network', `Failed to generate/store Nostr keys: ${error.message}`);
       return null;
@@ -668,7 +692,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Prevent public publish if globally disabled
     if (!options.encrypt && !privacySettings.sharePublicNotesGlobally) {
         get().setError('network', 'Public sharing is disabled in your privacy settings.');
-        toast.error('Cannot publish note publicly.', { description: 'Public sharing is disabled in your privacy settings.' });
+        // toast.error('Cannot publish note publicly.', { description: 'Public sharing is disabled in your privacy settings.' });
+        // Removed toast from here as it might not be available in all contexts store is used.
+        // UI should handle user feedback for this error.
+        console.error('Cannot publish note publicly: Public sharing is disabled in your privacy settings.');
         return;
     }
 
@@ -699,14 +726,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (!options.encrypt && privacySettings.sharePublicNotesGlobally) {
         get().updateNote(currentNoteId, { status: 'published', isSharedPublicly: true });
       } else if (options.encrypt) {
-        // For encrypted notes, we might not mark them 'isSharedPublicly' in the same way,
-        // or have a different field e.g., 'isSharedPrivately'. For now, only public shares set this.
-        get().updateNote(currentNoteId, { status: 'published' }); // Still mark as published
+        get().updateNote(currentNoteId, { status: 'published' });
       }
-      toast.success("Note published to Nostr!");
+      // toast.success("Note published to Nostr!"); // UI should handle this
+      console.log("Note published to Nostr successfully (details depend on relays).");
     } catch (error: any) {
       get().setError('network', `Failed to publish note: ${error.message}`);
-      toast.error("Failed to publish note.", { description: error.message });
+      // toast.error("Failed to publish note.", { description: error.message }); // UI should handle this
+      console.error(`Failed to publish note: ${error.message}`);
     } finally {
       get().setLoading('network', false);
     }
@@ -826,8 +853,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.warn("Attempted to set Nostr relays without an active user profile. Relays not persisted to profile.");
       set({ nostrRelays: newRelays });
     }
-    // TODO: Add logic to reconnect/resubscribe to new relay list if currently connected.
-    // This might involve unsubscribing all, then resubscribing with new relays.
+    // TODO: Consider logic to reconnect/resubscribe if relays change significantly.
+    // For now, subscriptions use the relays active at the time of subscription.
   },
 
   addNostrRelay: async (relayUrl: string) => {
@@ -870,73 +897,80 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
       }
     }
-    // Kind 1: Public Note (or other kinds you want to process as "notes")
+    // Kind 1: Public Note (can be for general browsing, matching, or topic feeds)
     else if (event.kind === 1) {
-      // This is a simple interpretation. A proper app might convert Nostr events to local Note format.
-      // For "NetworkPanel -> Browse Public Notes", this might populate a temporary list.
-      // For "Matches", it would involve more complex logic.
+        // 1. Check if it belongs to any subscribed topics
+        const eventTags = event.tags.filter(t => t[0] === 't').map(t => `#${t[1]}`);
+        const subscribedTopics = Object.keys(get().activeTopicSubscriptions);
 
-      // Example: If it's a note from another user, consider it for matching or display.
-      // This is a placeholder for where matching logic would be triggered.
-      // For now, let's assume public notes are just logged or added to a temporary display list (not implemented here).
-      // If we want to treat incoming kind 1 events as potential notes to display/match:
-      const potentialNote: Partial<Note & { originalEvent: NostrEvent }> = {
-          id: `nostr-${event.id}`, // Prefix to avoid collision with local notes
-          title: event.tags.find(t => t[0] === 'title')?.[1] || event.content.substring(0,30),
-          content: event.content,
-          tags: event.tags.filter(t => t[0] === 't').map(t => `#${t[1]}`),
-          // values: // parse from custom tags if any
-          status: 'published',
-          createdAt: new Date(event.created_at * 1000),
-          updatedAt: new Date(event.created_at * 1000),
-          originalEvent: event, // Store the original event for more detailed display or actions
-      };
-      console.log("Potential public note from network:", potentialNote);
-
-      // Basic Matching Logic (naive implementation for now)
-      // Check if this incoming note shares any tags with local notes
-      if (currentUserPubkey && event.pubkey !== currentUserPubkey && potentialNote.tags && potentialNote.tags.length > 0) {
-        const localNotesArray = Object.values(state.notes);
-        let matched = false;
-        let sharedTags: string[] = [];
-
-        for (const localNote of localNotesArray) {
-          if (localNote.tags && localNote.tags.length > 0) {
-            const localNoteTagsLower = localNote.tags.map(t => t.toLowerCase());
-            const incomingNoteTagsLower = potentialNote.tags.map(t => t.toLowerCase());
-            const commonTags = localNoteTagsLower.filter(t => incomingNoteTagsLower.includes(t));
-            if (commonTags.length > 0) {
-              matched = true;
-              sharedTags = [...new Set([...sharedTags, ...commonTags.map(t => {
-                // Find original casing from incoming note for display
-                return potentialNote.tags!.find(orig => orig.toLowerCase() === t) || t;
-              })])];
-              // For a simple match, we can break after finding the first local note with a shared tag.
-              // Or, aggregate all shared tags across all local notes. For now, first match is fine.
-              // break;
+        let matchedTopic: string | null = null;
+        for (const topic of subscribedTopics) {
+            // Simple match: if topic is #AI, event tag #AI matches.
+            // More complex matching (e.g. ontology-based) could be added here if desired for topic feeds.
+            if (eventTags.includes(topic) || eventTags.includes(topic.substring(1))) { // Check with and without #
+                matchedTopic = topic;
+                break;
             }
-          }
         }
 
-        if (matched) {
-          const newMatch: Match = {
-            id: `match-${event.id}`,
-            targetNoteId: event.id, // ID of the external Nostr event
-            targetAuthor: event.pubkey,
-            similarity: 0.1, // Placeholder similarity - could be based on number of shared tags / total tags etc.
-            sharedTags: sharedTags.slice(0, 5), // Limit displayed tags
-            sharedValues: [], // Placeholder for shared values, not implemented in this basic match
-            timestamp: new Date(event.created_at * 1000),
-          };
-          state.addNostrMatch(newMatch);
-          console.log("New match found and added:", newMatch);
+        if (matchedTopic) {
+            get().addNoteToTopic(matchedTopic, event as NostrEvent);
+            // Note: A single event might match multiple subscribed topics.
+            // Current addNoteToTopic will add it to the first matched one.
+            // Could be extended to add to all matched topics if needed.
         }
-      }
+
+
+        // 2. Perform general matching logic (existing)
+        const potentialNote: Partial<Note & { originalEvent: NostrEvent }> = {
+            id: `nostr-${event.id}`,
+            title: event.tags.find(t => t[0] === 'title')?.[1] || event.content.substring(0,30),
+            content: event.content,
+            tags: eventTags,
+            status: 'published',
+            createdAt: new Date(event.created_at * 1000),
+            updatedAt: new Date(event.created_at * 1000),
+            originalEvent: event as NostrEvent,
+        };
+        // console.log("Potential public note from network:", potentialNote); // Already logged by subscribeToPublicNotes
+
+        if (currentUserPubkey && event.pubkey !== currentUserPubkey && potentialNote.tags && potentialNote.tags.length > 0) {
+            const localNotesArray = Object.values(state.notes);
+            let matched = false;
+            let sharedTagsResult: string[] = [];
+
+            for (const localNote of localNotesArray) {
+                if (localNote.tags && localNote.tags.length > 0) {
+                    const localNoteTagsLower = localNote.tags.map(t => t.toLowerCase());
+                    const incomingNoteTagsLower = (potentialNote.tags || []).map(t => t.toLowerCase());
+                    const commonTags = localNoteTagsLower.filter(t => incomingNoteTagsLower.includes(t));
+                    if (commonTags.length > 0) {
+                        matched = true;
+                        sharedTagsResult = [...new Set([...sharedTagsResult, ...commonTags.map(t => {
+                            return (potentialNote.tags || []).find(orig => orig.toLowerCase() === t) || t;
+                        })])];
+                    }
+                }
+            }
+
+            if (matched) {
+                const newMatch: Match = {
+                    id: `match-${event.id}`,
+                    targetNoteId: event.id,
+                    targetAuthor: event.pubkey,
+                    similarity: 0.1,
+                    sharedTags: sharedTagsResult.slice(0, 5),
+                    sharedValues: [],
+                    timestamp: new Date(event.created_at * 1000),
+                };
+                state.addNostrMatch(newMatch);
+                // console.log("New match found and added:", newMatch); // Already logged by addNostrMatch
+            }
+        }
     }
-    // TODO: Handle other event kinds or specific logic for more advanced matching
+    // TODO: Handle other event kinds
   },
 
-  // updateUserProfile needs to be adjusted to handle partial updates better
   updateUserProfile: async (profileUpdates: Partial<UserProfile>) => {
     const currentProfile = get().userProfile ||
         { nostrPubkey: '', sharedTags: [], preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' }};
@@ -947,11 +981,166 @@ export const useAppStore = create<AppStore>((set, get) => ({
         preferences: {
             ...currentProfile.preferences,
             ...profileUpdates.preferences,
-        }
+        },
+        // Ensure privacySettings and nostrRelays are preserved if not explicitly in profileUpdates
+        privacySettings: {
+          ...(currentProfile.privacySettings || { sharePublicNotesGlobally: false, shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }),
+          ...profileUpdates.privacySettings,
+        },
+        nostrRelays: profileUpdates.nostrRelays || currentProfile.nostrRelays || [],
     };
     await DBService.saveUserProfile(updatedProfile);
     set({ userProfile: updatedProfile });
   },
 
+  sendDirectMessage: async (recipientPk: string, content: string) => {
+    const { userProfile, nostrRelays, addDirectMessage } = get();
+    if (!userProfile || !userProfile.nostrPubkey || !nostrService.isLoggedIn()) {
+      throw new Error('User not logged in or Nostr keys not available.');
+    }
+    if (!recipientPk || !content.trim()) {
+      throw new Error('Recipient public key and message content are required.');
+    }
+
+    get().setLoading('network', true);
+    get().setError('network', undefined);
+
+    try {
+      // Create a temporary Note-like object for publishNote
+      // The actual event ID will come from nostrService.publishNote
+      const tempNoteForDM: Note = {
+        id: `dm-temp-${Date.now()}`, // Temporary ID, not the actual event ID
+        title: '', // DMs don't typically have titles in this context
+        content: content.trim(),
+        tags: [], // NIP-04 'p' tag is added by nostrService
+        values: {},
+        fields: {},
+        status: 'draft', // Does not apply directly to DMs in the same way as notes
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // publishNote with encrypt=true handles Kind 4 event creation
+      const publishedEventIds = await nostrService.publishNote(
+        tempNoteForDM,
+        nostrRelays, // Use user's configured relays
+        true,        // Encrypt
+        recipientPk  // Recipient's public key
+      );
+
+      if (publishedEventIds.length === 0) {
+        // This might happen if all relays fail, or no relays configured.
+        // nostrService.publishNote might throw an error before this in some cases.
+        throw new Error("Message failed to publish to any relay.");
+      }
+      const eventId = publishedEventIds[0]; // Assuming we use the first successful event ID
+
+      // Add to local store and DB after successful publish
+      const sentDm: DirectMessage = {
+        id: eventId, // Use the actual event ID from Nostr
+        from: userProfile.nostrPubkey,
+        to: recipientPk,
+        content: content.trim(),
+        timestamp: new Date(), // Timestamp of sending
+        encrypted: true,
+      };
+      addDirectMessage(sentDm); // Add to Zustand state
+      await DBService.saveMessage(sentDm); // Persist to IndexedDB
+
+    } catch (error: any) {
+      console.error('Failed to send direct message:', error);
+      get().setError('network', `Failed to send DM: ${error.message}`);
+      throw error; // Re-throw for UI to handle
+    } finally {
+      get().setLoading('network', false);
+    }
+  },
+
+  subscribeToDirectMessages: (relays?: string[]) => {
+    const { userProfile, nostrRelays, handleIncomingNostrEvent } = get();
+    if (!userProfile || !userProfile.nostrPubkey || !nostrService.isLoggedIn()) {
+      get().setError('network', 'Cannot subscribe to DMs: User not logged in.');
+      return null;
+    }
+
+    const relaysToUse = relays || nostrRelays;
+    if (relaysToUse.length === 0) {
+      get().setError('network', 'Cannot subscribe to DMs: No relays configured.');
+      return null;
+    }
+
+    const filters: Filter[] = [
+      { kinds: [4], '#p': [userProfile.nostrPubkey], limit: 50 },
+      { kinds: [4], authors: [userProfile.nostrPubkey], limit: 50 }
+    ];
+    const subId = `direct_messages_${userProfile.nostrPubkey.substring(0,8)}_${Date.now()}`;
+
+    try {
+      const subscription = nostrService.subscribeToEvents(
+        filters,
+        (event) => handleIncomingNostrEvent(event as NostrEvent),
+        relaysToUse,
+        subId
+      );
+      if (subscription) {
+        // Use the general activeNostrSubscriptions for actual nostr-tool sub objects
+        set(state => ({
+          activeNostrSubscriptions: { ...state.activeNostrSubscriptions, [subId]: subscription },
+        }));
+        console.log(`Subscribed to Direct Messages with ID: ${subId}`);
+        return subId; // Return the ID for the UI to potentially track if needed, though not strictly necessary for DMs if panel just reads from directMessages array
+      }
+      return null;
+    } catch (error: any) {
+      get().setError('network', `Error subscribing to direct messages: ${error.message}`);
+      console.error(`Error subscribing to direct messages: ${error.message}`);
+      return null;
+    }
+  },
+
+  // Topic Subscription Management
+  addTopicSubscription: (topic: string, subscriptionId: string) => {
+    set(state => ({
+      activeTopicSubscriptions: {
+        ...state.activeTopicSubscriptions,
+        [topic]: subscriptionId,
+      },
+      // Initialize an empty array for notes if this is a new topic
+      topicNotes: {
+        ...state.topicNotes,
+        [topic]: state.topicNotes[topic] || [],
+      }
+    }));
+  },
+
+  removeTopicSubscription: (topic: string) => {
+    set(state => {
+      const newActiveTopicSubscriptions = { ...state.activeTopicSubscriptions };
+      delete newActiveTopicSubscriptions[topic];
+      // Optionally, clear notes for this topic or keep them
+      // const newTopicNotes = { ...state.topicNotes };
+      // delete newTopicNotes[topic];
+      return {
+        activeTopicSubscriptions: newActiveTopicSubscriptions,
+        // topicNotes: newTopicNotes, // if clearing notes
+      };
+    });
+  },
+
+  addNoteToTopic: (topic: string, note: NostrEvent) => {
+    set(state => {
+      const currentNotesForTopic = state.topicNotes[topic] || [];
+      // Avoid duplicates by checking event ID
+      if (currentNotesForTopic.find(n => n.id === note.id)) {
+        return state; // Already have this note for this topic
+      }
+      return {
+        topicNotes: {
+          ...state.topicNotes,
+          [topic]: [note, ...currentNotesForTopic].slice(0, 100), // Add to start, limit to 100 notes per topic
+        },
+      };
+    });
+  },
 
 }));

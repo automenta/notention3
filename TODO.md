@@ -123,3 +123,24 @@ This development plan organizes the Notention specification into implementation 
   - Provide developer documentation: architecture, services, components.
   - Publish guide for connecting to Nostr relays and running local Ollama.
   - Announce availability on web and mobile via browser PWA prompts.
+
+## Remaining Work for Future Iteration
+- **AI Enhancements**:
+    - Fully implement and test "Embedding vectors for alternative matching" in `AIService.ts` and integrate into the matching logic. This includes choosing and configuring specific embedding models (e.g., OllamaEmbeddings, GoogleGenerativeAIEmbeddings) and updating user settings if necessary.
+- **Testing**:
+    - Write comprehensive UI component tests using Vitest and @testing-library/react.
+    - Implement the UI (E2E) test strategy using Playwright for key user flows.
+    - Investigate and resolve Vitest execution timeouts in the development/testing environment to enable reliable local and CI test runs.
+    - Expand unit test coverage for services and store actions, particularly focusing on more complex interactions and edge cases for sync logic.
+- **Ontology Editor**:
+    - Implement the "Drag-and-drop tree editor" for concepts and hierarchies in `OntologyEditor.tsx` for a more intuitive UX.
+- **Performance**:
+    - Investigate and implement list virtualization for `NotesList.tsx` and other potentially long lists (e.g., DMs, ontology nodes in editor) to improve performance with large datasets.
+    - Profile application for other performance bottlenecks on low-end devices.
+- **Nostr Sync**:
+    - Implement robust handling for deleted notes during Nostr sync (e.g., using Kind 5 events or specific deletion markers) beyond just removing from the local sync queue.
+- **User Experience (UX) / Polish**:
+    - Add specific UI for managing a "buddy list" or contacts for DMs, beyond relying on message history.
+    - Refine sorting options in `NotesList.tsx`.
+    - Implement user-facing import/export UI for ontology specifically (currently part of general data export/import).
+    - Enhance backup prompts and key management UX.

@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { FileText, Pin, Archive, Trash2, Search, ChevronDown, ChevronRight, Tag } from "lucide-react";
+import { FileText, Pin, Archive, Trash2, Search, ChevronDown, ChevronRight, Tag, Folder as FolderIcon, FolderOpen } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Input } from "./ui/input";
 import { useAppStore } from "../store";
-import { Note, OntologyNode } from "../../shared/types";
+import { Note, OntologyNode, Folder } from "../../shared/types"; // Added Folder
 import { NoteService } from "../services/NoteService";
+import { FolderService } from "../services/FolderService"; // Import FolderService
 import { OntologyService } from "../services/ontology"; // Import OntologyService
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible"; // For collapsible sections
 import { DirectMessage } from "../../shared/types"; // Import DirectMessage type
@@ -15,12 +16,18 @@ interface NotesListProps {
   viewMode: 'notes' | 'chats';
 }
 
+// Define a type for folder tree nodes that includes the original folder data and its children
+interface FolderTreeNode extends Folder {
+  childrenNodes?: FolderTreeNode[];
+}
+
 export function NotesList({ viewMode }: NotesListProps) {
-  const { 
+  const {
     notes: notesMap,
+    folders: foldersMap, // Get folders from store
     directMessages, // Get DMs from store
-    currentNoteId, 
-    setCurrentNote, 
+    currentNoteId,
+    setCurrentNote,
     deleteNote: storeDeleteNote,
     searchQuery: globalSearchQuery,
     setSearchQuery: setGlobalSearchQuery,
@@ -36,8 +43,24 @@ export function NotesList({ viewMode }: NotesListProps) {
   const [localSearchTerm, setLocalSearchTerm] = useState(globalSearchQuery); // Input field's immediate value
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(globalSearchQuery); // Debounced value for triggering search
   const [expandedOntologyNodes, setExpandedOntologyNodes] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set()); // For folder tree
 
   const allNotes = useMemo(() => Object.values(notesMap), [notesMap]);
+  const allFolders = useMemo(() => Object.values(foldersMap), [foldersMap]);
+
+  const folderTree = useMemo(() => {
+    // Use FolderService.buildFolderTree which expects Folder[] and returns Folder[] (roots)
+    // but we'll adapt it or use a local version if its return type isn't exactly FolderTreeNode[]
+    const buildTree = (folders: Folder[], parentId?: string): FolderTreeNode[] => {
+      return folders
+        .filter(folder => folder.parentId === parentId)
+        .map(folder => ({
+          ...folder,
+          childrenNodes: buildTree(folders, folder.id)
+        }));
+    };
+    return buildTree(allFolders);
+  }, [allFolders]);
 
   useEffect(() => {
     // Sync local search term if global one changes
@@ -146,6 +169,32 @@ export function NotesList({ viewMode }: NotesListProps) {
     setGlobalSearchQuery(localSearchTerm);
   };
 
+  const handleFolderClick = useCallback((folderId: string | undefined) => {
+    // If clicking "All Notes" (folderId is undefined) or the currently active folder, clear folder filter
+    if (folderId === searchFilters.folderId || folderId === undefined) {
+      setStoreSearchFilters({ ...searchFilters, folderId: undefined });
+    } else {
+      // Otherwise, filter by this folder
+      setStoreSearchFilters({ ...searchFilters, folderId: folderId });
+    }
+    // Clear text search and tag search when applying/clearing folder filter
+    setLocalSearchTerm("");
+    setGlobalSearchQuery("");
+    setStoreSearchFilters(prev => ({ ...prev, tags: undefined }));
+  }, [searchFilters, setStoreSearchFilters, setGlobalSearchQuery]);
+
+  const toggleFolderExpansion = (folderId: string) => {
+    setExpandedFolders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(folderId)) {
+        newSet.delete(folderId);
+      } else {
+        newSet.add(folderId);
+      }
+      return newSet;
+    });
+  };
+
   const handleOntologyTagClick = useCallback((tagNode: OntologyNode) => {
     const currentFilterTags = searchFilters.tags || [];
     const semanticMatches = OntologyService.getSemanticMatches(ontology, tagNode.label);
@@ -158,10 +207,10 @@ export function NotesList({ viewMode }: NotesListProps) {
     } else {
       setStoreSearchFilters({ ...searchFilters, tags: semanticMatches });
     }
-    // Clear text search when applying/clearing ontology filter for clarity
+    // Clear text search and folder filter when applying/clearing ontology filter for clarity
     setLocalSearchTerm("");
     setGlobalSearchQuery("");
-
+    setStoreSearchFilters(prev => ({ ...prev, folderId: undefined }));
   }, [ontology, searchFilters, setStoreSearchFilters, setGlobalSearchQuery]);
 
   const toggleOntologyNodeExpansion = (nodeId: string) => {
@@ -175,6 +224,48 @@ export function NotesList({ viewMode }: NotesListProps) {
       return newSet;
     });
   };
+
+  const renderFolderNode = (folderNode: FolderTreeNode, level: number = 0): JSX.Element => {
+    const isExpanded = expandedFolders.has(folderNode.id);
+    const isActive = searchFilters.folderId === folderNode.id;
+
+    return (
+      <div key={folderNode.id} className={`ml-${level * 2} my-0.5`}>
+        <div
+          className={`flex items-center gap-1 py-1 px-1.5 rounded group cursor-pointer hover:bg-accent ${isActive ? 'bg-accent border-primary' : 'hover:bg-accent/80'}`}
+          onClick={() => handleFolderClick(folderNode.id)}
+        >
+          {folderNode.childrenNodes && folderNode.childrenNodes.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="h-5 w-5 p-0 hover:bg-accent/50"
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent folder click when toggling
+                toggleFolderExpansion(folderNode.id);
+              }}
+            >
+              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </Button>
+          ) : (
+            <span className="w-5 inline-block" /> // Placeholder for alignment
+          )}
+          {isExpanded ? <FolderOpen size={14} className={`mr-1.5 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} /> : <FolderIcon size={14} className={`mr-1.5 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />}
+          <span className={`text-xs truncate ${isActive ? 'font-semibold text-primary' : 'text-foreground'}`}>
+            {folderNode.name}
+          </span>
+          {/* Optional: Show note count in folder */}
+          {/* <Badge variant="secondary" className="ml-auto text-xxs px-1">{folderNode.noteIds.length}</Badge> */}
+        </div>
+        {isExpanded && folderNode.childrenNodes && folderNode.childrenNodes.length > 0 && (
+          <div className="pl-3 border-l border-dashed border-muted-foreground/20 ml-[11px]">
+            {folderNode.childrenNodes.map(child => renderFolderNode(child, 0))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   const renderOntologyFilterNode = (node: OntologyNode, level: number = 0): JSX.Element | null => {
     if (!ontology || !ontology.nodes || !node ) return null; // Added !ontology.nodes check
@@ -264,14 +355,14 @@ export function NotesList({ viewMode }: NotesListProps) {
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="p-2 text-sm bg-muted/30">
-          {Object.keys(ontology.nodes).length > 0 ? ( // Check if ontology has any nodes
-            <ScrollArea className="max-h-48"> {/* Limit height */}
+          {Object.keys(ontology.nodes).length > 0 ? (
+            <ScrollArea className="max-h-40">
                <div className="space-y-0.5">
                 {ontology.rootIds.map(rootId => renderOntologyFilterNode(ontology.nodes[rootId])).filter(Boolean)}
               </div>
             </ScrollArea>
           ) : (
-            <p className="text-xs text-muted-foreground px-1 py-2">No ontology tags defined yet. Add some in the Ontology Editor.</p>
+            <p className="text-xs text-muted-foreground px-1 py-2">No ontology tags defined.</p>
           )}
            {(searchFilters.tags && searchFilters.tags.length > 0) && (
             <Button
@@ -287,6 +378,48 @@ export function NotesList({ viewMode }: NotesListProps) {
           )}
         </CollapsibleContent>
       </Collapsible>
+
+      {/* Folders Section */}
+      <Collapsible className="border-b border-border" defaultOpen>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="w-full justify-start px-2.5 py-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground rounded-none">
+            <FolderIcon size={14} className="mr-2" />
+            Folders
+            <ChevronDown size={14} className="ml-auto data-[state=open]:rotate-180 transition-transform" />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="p-2 text-sm bg-muted/30">
+          <ScrollArea className="max-h-60"> {/* Adjust max height as needed */}
+            <div className="space-y-0.5">
+              <div
+                className={`flex items-center gap-1 py-1 px-1.5 rounded group cursor-pointer hover:bg-accent ${!searchFilters.folderId ? 'bg-accent border-primary' : 'hover:bg-accent/80'}`}
+                onClick={() => handleFolderClick(undefined)} // Click for "All Notes"
+              >
+                <span className="w-5 inline-block" /> {/* Alignment spacer */}
+                <FileText size={14} className={`mr-1.5 ${!searchFilters.folderId ? 'text-primary' : 'text-muted-foreground'}`} />
+                <span className={`text-xs truncate ${!searchFilters.folderId ? 'font-semibold text-primary' : 'text-foreground'}`}>
+                  All Notes
+                </span>
+              </div>
+              {folderTree.map(folderNode => renderFolderNode(folderNode, 0))}
+              {folderTree.length === 0 && (
+                 <p className="text-xs text-muted-foreground px-1 py-2">No folders created yet.</p>
+              )}
+            </div>
+          </ScrollArea>
+           {(searchFilters.folderId) && (
+            <Button
+              variant="outline"
+              size="xs"
+              className="mt-2 w-full h-7 text-xs"
+              onClick={() => handleFolderClick(undefined)}
+            >
+              Clear Folder Filter (Show All Notes)
+            </Button>
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+
 
       <ScrollArea className="flex-1">
         <div className="p-2">

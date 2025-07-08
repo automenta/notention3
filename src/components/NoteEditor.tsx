@@ -411,9 +411,20 @@ export function NoteEditor() {
 
   const insertSummaryIntoEditor = () => {
     if (editor && currentSummary) {
+      // Escape HTML characters in the summary to ensure it's treated as plain text
+      const escapeHtml = (unsafe: string) => {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      };
+      const escapedSummary = escapeHtml(currentSummary);
+
       // Example: Insert summary at the beginning of the note, clearly marked.
       const currentContent = editor.getHTML();
-      const summaryBlock = `<p><strong>AI Summary:</strong></p><p>${currentSummary}</p><hr>`;
+      const summaryBlock = `<p><strong>AI Summary:</strong></p><p>${escapedSummary}</p><hr>`;
       editor.commands.setContent(summaryBlock + currentContent, true); // `true` to parse HTML
       setShowSummaryModal(false);
       toast.info("Summary inserted into note.");

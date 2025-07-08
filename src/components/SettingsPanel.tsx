@@ -1,30 +1,28 @@
 import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck } from "lucide-react";
-import React, { useState } from "react"; // Import useState
+import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
 import { useAppStore } from "../store";
 import { DBService } from "../services/db";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogClose } from "./ui/dialog"; // Import Dialog components
+import { UserProfile as UserProfileComponent } from "./UserProfile"; // Import the new component
 
 export function SettingsPanel() {
   const {
     userProfile,
-    updateUserProfile,
+    // updateUserProfile, // This will be handled by UserProfileComponent internally for its scope
     generateAndStoreNostrKeys,
     logoutFromNostr,
-    nostrRelays, // Get relays from store
-    addNostrRelay,    // Action to add relay
-    removeNostrRelay // Action to remove relay
+    nostrRelays,
+    addNostrRelay,
+    removeNostrRelay,
+    updateUserProfile: storeUpdateUserProfile // Keep for other settings like theme, AI
   } = useAppStore();
 
-  const [newSharedTag, setNewSharedTag] = useState("");
-  const [newSharedValueKey, setNewSharedValueKey] = useState("");
-  const [newSharedValueVal, setNewSharedValueVal] = useState("");
+  // State for relay management is kept here
   const [newRelayUrl, setNewRelayUrl] = useState("");
 
   const handleExportData = async () => {
@@ -80,43 +78,8 @@ export function SettingsPanel() {
     }
   };
 
-  const handleAddSharedTag = () => {
-    if (userProfile && newSharedTag && !userProfile.sharedTags.includes(newSharedTag)) {
-      updateUserProfile({ ...userProfile, sharedTags: [...userProfile.sharedTags, newSharedTag] });
-      setNewSharedTag("");
-    }
-  };
-
-  const handleRemoveSharedTag = (tagToRemove: string) => {
-    if (userProfile) {
-      updateUserProfile({ ...userProfile, sharedTags: userProfile.sharedTags.filter(tag => tag !== tagToRemove) });
-    }
-  };
-
-  const handleAddSharedValue = () => {
-    if (userProfile && newSharedValueKey && newSharedValueVal) {
-      const currentSharedValues = userProfile.sharedValues || [];
-      // Prevent duplicate keys for simplicity, or decide on update strategy
-      const existingIndex = currentSharedValues.findIndex(val => val.startsWith(newSharedValueKey + "::"));
-      const newEntry = `${newSharedValueKey}::${newSharedValueVal}`;
-      let updatedValues;
-      if (existingIndex > -1) {
-        updatedValues = [...currentSharedValues];
-        updatedValues[existingIndex] = newEntry;
-      } else {
-        updatedValues = [...currentSharedValues, newEntry];
-      }
-      updateUserProfile({ ...userProfile, sharedValues: updatedValues });
-      setNewSharedValueKey("");
-      setNewSharedValueVal("");
-    }
-  };
-
-  const handleRemoveSharedValue = (valueToRemove: string) => {
-    if (userProfile && userProfile.sharedValues) {
-      updateUserProfile({ ...userProfile, sharedValues: userProfile.sharedValues.filter(val => val !== valueToRemove) });
-    }
-  };
+  // Shared tag and value logic is now within UserProfile.tsx
+  // Relay management remains here or could be moved to a dedicated component too.
 
   const handleAddRelay = () => {
     if (newRelayUrl.trim() && !nostrRelays.includes(newRelayUrl.trim())) {
@@ -134,7 +97,7 @@ export function SettingsPanel() {
   const toggleTheme = () => {
     if (userProfile) {
       const newTheme = userProfile.preferences.theme === 'light' ? 'dark' : 'light';
-      updateUserProfile({
+      storeUpdateUserProfile({ // Use storeUpdateUserProfile for settings outside UserProfileComponent
         ...userProfile,
         preferences: {
           ...userProfile.preferences,
@@ -155,109 +118,12 @@ export function SettingsPanel() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <User size={16} />
-              Profile
+              User Profile & Identity
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent>
             {userProfile ? (
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-xs">Nostr Public Key (npub)</Label>
-                  <Input
-                    value={userProfile.nostrPubkey || "Not set"}
-                    readOnly
-                    className="text-xs font-mono h-8"
-                  />
-                </div>
-                
-                {/* Shared Tags Management */}
-                <div>
-                  <Label className="text-xs block mb-1">Profile Tags</Label>
-                  <p className="text-xs text-muted-foreground mb-2">Tags to publicly associate with your profile for discovery.</p>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {userProfile.sharedTags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-xs group relative pr-6">
-                        {tag}
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          className="absolute top-1/2 right-0.5 transform -translate-y-1/2 h-4 w-4 p-0 opacity-50 group-hover:opacity-100"
-                          onClick={() => handleRemoveSharedTag(tag)}
-                        >
-                          <Trash2 size={10}/>
-                        </Button>
-                      </Badge>
-                    ))}
-                    {userProfile.sharedTags.length === 0 && (
-                      <p className="text-xs text-muted-foreground italic">No profile tags defined.</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      value={newSharedTag}
-                      onChange={(e) => setNewSharedTag(e.target.value)}
-                      placeholder="Add a tag (e.g. #developer)"
-                      className="text-xs h-8"
-                    />
-                    <Button size="sm" onClick={handleAddSharedTag} className="h-8">
-                      <Plus size={14}/>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Shared Values Management */}
-                <div>
-                  <Label className="text-xs block mb-1">Profile Key-Values</Label>
-                   <p className="text-xs text-muted-foreground mb-2">Key-value pairs to publicly associate with your profile.</p>
-                  <div className="space-y-1 mb-2">
-                    {(userProfile.sharedValues || []).map((valueEntry) => {
-                      const [key, ...valParts] = valueEntry.split('::');
-                      const val = valParts.join('::');
-                      return (
-                        <Badge key={valueEntry} variant="secondary" className="text-xs group relative pr-6 mr-1">
-                          {key}: {val}
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="absolute top-1/2 right-0.5 transform -translate-y-1/2 h-4 w-4 p-0 opacity-50 group-hover:opacity-100"
-                            onClick={() => handleRemoveSharedValue(valueEntry)}
-                          >
-                            <Trash2 size={10}/>
-                          </Button>
-                        </Badge>
-                      );
-                    })}
-                    {(!userProfile.sharedValues || userProfile.sharedValues.length === 0) && (
-                       <p className="text-xs text-muted-foreground italic">No profile key-values defined.</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <Label htmlFor="newSharedValueKey" className="text-xxs">Key</Label>
-                      <Input
-                        id="newSharedValueKey"
-                        value={newSharedValueKey}
-                        onChange={(e) => setNewSharedValueKey(e.target.value)}
-                        placeholder="e.g., location"
-                        className="text-xs h-8"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <Label htmlFor="newSharedValueVal" className="text-xxs">Value</Label>
-                      <Input
-                        id="newSharedValueVal"
-                        value={newSharedValueVal}
-                        onChange={(e) => setNewSharedValueVal(e.target.value)}
-                        placeholder="e.g., Earth"
-                        className="text-xs h-8"
-                      />
-                    </div>
-                    <Button size="sm" onClick={handleAddSharedValue} className="h-8">
-                       <Plus size={14}/>
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <UserProfileComponent />
             ) : (
               <div className="text-center py-4">
                 <p className="text-sm text-muted-foreground mb-2">
@@ -271,7 +137,7 @@ export function SettingsPanel() {
           </CardContent>
         </Card>
 
-        {/* Identity & Keys */}
+        {/* Nostr Key Management (Moved out from UserProfileComponent to keep it focused) */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
@@ -473,7 +339,7 @@ export function SettingsPanel() {
                 checked={userProfile?.preferences.aiEnabled || false}
                 onCheckedChange={(checked) => {
                   if (userProfile) {
-                    updateUserProfile({
+                    storeUpdateUserProfile({ // Use storeUpdateUserProfile
                       ...userProfile,
                       preferences: {
                         ...userProfile.preferences,
@@ -495,7 +361,7 @@ export function SettingsPanel() {
                     placeholder="e.g., http://localhost:11434"
                     onChange={(e) => {
                       if (userProfile) {
-                        updateUserProfile({
+                        storeUpdateUserProfile({ // Use storeUpdateUserProfile
                           ...userProfile,
                           preferences: {
                             ...userProfile.preferences,
@@ -519,7 +385,7 @@ export function SettingsPanel() {
                     placeholder="Enter your Gemini API Key"
                     onChange={(e) => {
                       if (userProfile) {
-                        updateUserProfile({
+                        storeUpdateUserProfile({ // Use storeUpdateUserProfile
                           ...userProfile,
                           preferences: {
                             ...userProfile.preferences,

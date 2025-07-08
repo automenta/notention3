@@ -1,20 +1,40 @@
-import { useState } from "react";
-import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "./ui/dialog";
 import { useAppStore } from "../store";
-import { OntologyNode } from "../../shared/types";
+import { OntologyNode, OntologyTree } from "../../shared/types";
+import { OntologyService } from "../services/ontology";
 
 export function OntologyEditor() {
-  const { ontology, updateOntology } = useAppStore();
+  const { ontology, updateOntology, setOntology: setStoreOntology } = useAppStore();
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [editingNode, setEditingNode] = useState<string | null>(null);
+
+  // State for adding a new node
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newNodeLabel, setNewNodeLabel] = useState("");
-  const [newNodeParent, setNewNodeParent] = useState<string | undefined>();
+  const [newNodeParentId, setNewNodeParentId] = useState<string | undefined>();
+
+  // State for editing an existing node
+  const [editingNode, setEditingNode] = useState<OntologyNode | null>(null);
+  const [editNodeLabel, setEditNodeLabel] = useState("");
+  const [editNodeAttributes, setEditNodeAttributes] = useState<{[key: string]: string}>({});
+
+  const handleOpenEditDialog = (node: OntologyNode) => {
+    setEditingNode(node);
+    setEditNodeLabel(node.label);
+    setEditNodeAttributes(node.attributes || {});
+  };
+
+  const handleCloseEditDialog = () => {
+    setEditingNode(null);
+    setEditNodeLabel("");
+    setEditNodeAttributes({});
+  };
 
   const toggleExpanded = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -26,90 +46,63 @@ export function OntologyEditor() {
     setExpandedNodes(newExpanded);
   };
 
-  const getChildNodes = (parentId?: string) => {
-    return Object.values(ontology.nodes).filter(node => node.parentId === parentId);
-  };
+  const getChildNodes = useMemo(() => {
+    return (parentId?: string): OntologyNode[] => {
+      if (!ontology || !ontology.nodes) return [];
+      return OntologyService.getChildNodes(ontology, parentId);
+    };
+  }, [ontology]);
 
-  const addNode = async () => {
+
+  const handleAddNode = async () => {
     if (!newNodeLabel.trim()) return;
 
-    const nodeId = newNodeLabel.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const newNode: OntologyNode = {
-      id: nodeId,
-      label: newNodeLabel.startsWith('#') || newNodeLabel.startsWith('@') 
-        ? newNodeLabel 
-        : `#${newNodeLabel}`,
-      parentId: newNodeParent,
-    };
+    const newNode = OntologyService.createNode(newNodeLabel, newNodeParentId);
+    const newOntology = OntologyService.addNode(ontology, newNode);
 
-    const updatedOntology = {
-      ...ontology,
-      nodes: {
-        ...ontology.nodes,
-        [nodeId]: newNode,
-      },
-      rootIds: newNodeParent 
-        ? ontology.rootIds 
-        : [...ontology.rootIds, nodeId],
-    };
+    await updateOntology(newOntology); // Assumes updateOntology updates localforage via store
+    setStoreOntology(newOntology); // Update Zustand store
 
-    // Update parent's children
-    if (newNodeParent && ontology.nodes[newNodeParent]) {
-      const parent = ontology.nodes[newNodeParent];
-      updatedOntology.nodes[newNodeParent] = {
-        ...parent,
-        children: [...(parent.children || []), nodeId],
-      };
-    }
-
-    await updateOntology(updatedOntology);
     setNewNodeLabel("");
-    setNewNodeParent(undefined);
+    setNewNodeParentId(undefined);
+    setIsAddDialogOpen(false);
   };
 
-  const deleteNode = async (nodeId: string) => {
-    const node = ontology.nodes[nodeId];
-    if (!node) return;
-
-    const updatedNodes = { ...ontology.nodes };
-    delete updatedNodes[nodeId];
-
-    // Remove from parent's children
-    if (node.parentId && updatedNodes[node.parentId]) {
-      const parent = updatedNodes[node.parentId];
-      updatedNodes[node.parentId] = {
-        ...parent,
-        children: (parent.children || []).filter(id => id !== nodeId),
-      };
-    }
-
-    // Remove from root IDs
-    const updatedRootIds = ontology.rootIds.filter(id => id !== nodeId);
-
-    // Move children to parent or root
-    const children = getChildNodes(nodeId);
-    children.forEach(child => {
-      updatedNodes[child.id] = {
-        ...child,
-        parentId: node.parentId,
-      };
-      
-      if (!node.parentId) {
-        updatedRootIds.push(child.id);
-      } else if (updatedNodes[node.parentId]) {
-        const parent = updatedNodes[node.parentId];
-        updatedNodes[node.parentId] = {
-          ...parent,
-          children: [...(parent.children || []), child.id],
-        };
-      }
-    });
-
-    await updateOntology({
-      nodes: updatedNodes,
-      rootIds: updatedRootIds,
-    });
+  const handleDeleteNode = async (nodeId: string) => {
+    const newOntology = OntologyService.removeNode(ontology, nodeId);
+    await updateOntology(newOntology);
+    setStoreOntology(newOntology);
   };
+
+  const handleUpdateNode = async () => {
+    if (!editingNode || !editNodeLabel.trim()) return;
+
+    const updates: Partial<OntologyNode> = {
+      label: editNodeLabel,
+      attributes: editNodeAttributes
+    };
+
+    const newOntology = OntologyService.updateNode(ontology, editingNode.id, updates);
+    await updateOntology(newOntology);
+    setStoreOntology(newOntology);
+    handleCloseEditDialog();
+  };
+
+  const handleAttributeChange = (key: string, value: string) => {
+    setEditNodeAttributes(prev => ({...prev, [key]: value}));
+  };
+
+  const handleAddAttribute = () => {
+    setEditNodeAttributes(prev => ({...prev, "":""})); // Add a new empty attribute
+  }
+
+  const handleRemoveAttribute = (key: string) => {
+    setEditNodeAttributes(prev => {
+      const newAttributes = {...prev};
+      delete newAttributes[key];
+      return newAttributes;
+    });
+  }
 
   const renderNode = (node: OntologyNode, level: number = 0) => {
     const children = getChildNodes(node.id);
@@ -135,16 +128,21 @@ export function OntologyEditor() {
             <div className="w-6" />
           )}
 
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="outline" className="text-xs cursor-default">
             {node.label}
           </Badge>
+          {node.attributes && Object.keys(node.attributes).length > 0 && (
+            <Badge variant="secondary" className="text-xs ml-1 cursor-default">
+              {Object.entries(node.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}
+            </Badge>
+          )}
 
           <div className="flex items-center gap-1 ml-auto">
             <Button
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0"
-              onClick={() => setEditingNode(node.id)}
+              onClick={() => handleOpenEditDialog(node)}
             >
               <Edit2 size={12} />
             </Button>
@@ -152,7 +150,7 @@ export function OntologyEditor() {
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0 text-destructive"
-              onClick={() => deleteNode(node.id)}
+              onClick={() => handleDeleteNode(node.id)}
             >
               <Trash2 size={12} />
             </Button>
@@ -174,20 +172,21 @@ export function OntologyEditor() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Ontology</h2>
           
-          <Dialog>
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
-                <Plus size={16} />
+                <Plus size={16} /> Add Concept
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Concept</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-4 py-4">
                 <div>
-                  <label className="text-sm font-medium">Label</label>
+                  <label htmlFor="newNodeLabel" className="text-sm font-medium">Label</label>
                   <Input
+                    id="newNodeLabel"
                     value={newNodeLabel}
                     onChange={(e) => setNewNodeLabel(e.target.value)}
                     placeholder="e.g., AI, Project, Person"
@@ -195,11 +194,12 @@ export function OntologyEditor() {
                 </div>
                 
                 <div>
-                  <label className="text-sm font-medium">Parent (optional)</label>
+                  <label htmlFor="newNodeParent" className="text-sm font-medium">Parent (optional)</label>
                   <select
-                    value={newNodeParent || ""}
-                    onChange={(e) => setNewNodeParent(e.target.value || undefined)}
-                    className="w-full p-2 border border-border rounded-md"
+                    id="newNodeParent"
+                    value={newNodeParentId || ""}
+                    onChange={(e) => setNewNodeParentId(e.target.value || undefined)}
+                    className="w-full p-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md text-sm"
                   >
                     <option value="">Root level</option>
                     {Object.values(ontology.nodes).map(node => (
@@ -209,16 +209,20 @@ export function OntologyEditor() {
                     ))}
                   </select>
                 </div>
-                
-                <Button onClick={addNode} className="w-full">
-                  Add Concept
-                </Button>
               </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleAddNode}>
+                  <Plus size={16} className="mr-2" /> Add Concept
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
 
-        {Object.keys(ontology.nodes).length === 0 ? (
+        {(!ontology || Object.keys(ontology.nodes).length === 0) ? (
           <div className="text-center text-muted-foreground py-8">
             <Hash size={48} className="mx-auto mb-4 opacity-50" />
             <p>No concepts yet</p>
@@ -226,14 +230,73 @@ export function OntologyEditor() {
           </div>
         ) : (
           <div>
-            {ontology.rootIds.map(rootId => {
+            {ontology.rootIds?.map(rootId => {
               const node = ontology.nodes[rootId];
               return node ? renderNode(node) : null;
             })}
           </div>
         )}
 
-        {/* Default concepts info */}
+        {/* Edit Node Dialog */}
+        {editingNode && (
+          <Dialog open={!!editingNode} onOpenChange={(open) => !open && handleCloseEditDialog()}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Concept: {editingNode.label}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <label htmlFor="editNodeLabel" className="text-sm font-medium">Label</label>
+                  <Input
+                    id="editNodeLabel"
+                    value={editNodeLabel}
+                    onChange={(e) => setEditNodeLabel(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Attributes</label>
+                  {Object.entries(editNodeAttributes).map(([key, value], index) => (
+                    <div key={index} className="flex items-center gap-2 mt-1">
+                      <Input
+                        value={key}
+                        onChange={(e) => {
+                          const newKey = e.target.value;
+                          const oldKey = Object.keys(editNodeAttributes)[index];
+                          const {[oldKey]: _, ...rest} = editNodeAttributes;
+                          setEditNodeAttributes({...rest, [newKey]: value});
+                        }}
+                        placeholder="Attribute Name"
+                        className="flex-1"
+                      />
+                      <Input
+                        value={value}
+                        onChange={(e) => handleAttributeChange(key, e.target.value)}
+                        placeholder="Attribute Value"
+                        className="flex-1"
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => handleRemoveAttribute(key)}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={handleAddAttribute} className="mt-2">
+                    <Plus size={14} className="mr-1" /> Add Attribute
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                 <DialogClose asChild>
+                  <Button variant="outline" onClick={handleCloseEditDialog}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleUpdateNode}>
+                  <Save size={16} className="mr-2" /> Save Changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Ontology Info Card */}
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="text-sm">About Ontology</CardTitle>
@@ -244,8 +307,11 @@ export function OntologyEditor() {
               Tags like #AI can have children like #MachineLearning and #NLP.
             </p>
             <p>
-              Use # for topics and @ for people. Relationships enable smart 
-              matching - searching #AI will also find #NLP notes.
+              Use # for topics (e.g. #AI) and @ for people (e.g. @JohnDoe).
+              Relationships enable smart matching - searching for notes tagged with #AI will also find notes tagged with #NLP if #NLP is a child of #AI.
+            </p>
+            <p>
+              You can define attributes for concepts, like `due:date` for a #Project, which can then be used in notes.
             </p>
           </CardContent>
         </Card>

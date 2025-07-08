@@ -1,33 +1,36 @@
-import { create } from 'zustand';
+import { create, StoreApi } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { AppState, Note, OntologyTree, UserProfile, Folder, NotentionTemplate, SearchFilters } from '../../shared/types';
 import { DBService } from '../services/db';
+import { FolderService } from '../services/FolderService'; // Import FolderService
+import { NoteService } from '../services/NoteService'; // Import NoteService
 
 interface AppActions {
   // Initialization
   initializeApp: () => Promise<void>;
   
   // Notes actions
-  createNote: (title?: string, content?: string) => Promise<string>;
+  createNote: (partialNote?: Partial<Note>) => Promise<string>; // Updated signature
   updateNote: (id: string, updates: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   setCurrentNote: (id: string | undefined) => void;
-  searchNotes: (query: string) => Promise<void>;
-  setSearchFilters: (filters: SearchFilters) => void;
+  setSearchQuery: (query: string) => void; // Renamed from searchNotes for clarity
+  setSearchFilters: (filters: Partial<SearchFilters>) => void; // Allow partial updates
+  moveNoteToFolder: (noteId: string, folderId: string | undefined) => Promise<void>;
   
   // Ontology actions
-  updateOntology: (ontology: OntologyTree) => Promise<void>;
+  setOntology: (ontology: OntologyTree) => Promise<void>; // Renamed from updateOntology
   
   // User profile actions
   updateUserProfile: (profile: UserProfile) => Promise<void>;
   
   // Folders actions
-  createFolder: (name: string, parentId?: string) => Promise<string>;
+  createFolder: (name: string, parentId?: string) => Promise<string | undefined>;
   updateFolder: (id: string, updates: Partial<Folder>) => Promise<void>;
-  deleteFolder: (id: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>; // Needs to handle recursive deletion and note unassignment
   
   // Templates actions
-  createTemplate: (template: Omit<NotentionTemplate, 'id'>) => Promise<string>;
+  createTemplate: (templateData: Omit<NotentionTemplate, 'id'>) => Promise<string>; // Renamed param
   updateTemplate: (id: string, updates: Partial<NotentionTemplate>) => Promise<void>;
   deleteTemplate: (id: string) => Promise<void>;
   
@@ -54,7 +57,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentNoteId: undefined,
   sidebarTab: 'notes',
   searchQuery: '',
-  searchFilters: {},
+  searchFilters: {}, // Initialize with empty object
   
   matches: [],
   directMessages: [],
@@ -82,31 +85,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       state.setLoading('ontology', true);
       
       // Load notes
-      const notes = await DBService.getAllNotes();
+      const notes = await NoteService.getNotes(); // Use NoteService
       const notesMap: { [id: string]: Note } = {};
-      notes.forEach(note => {
-        notesMap[note.id] = note;
-      });
+      notes.forEach(note => notesMap[note.id] = note);
       
-      // Load ontology or create default
-      let ontology = await DBService.getOntology();
-      if (!ontology) {
-        ontology = await DBService.getDefaultOntology();
-        await DBService.saveOntology(ontology);
+      let ontologyData = await DBService.getOntology();
+      if (!ontologyData) {
+        ontologyData = await DBService.getDefaultOntology();
+        await DBService.saveOntology(ontologyData);
       }
       
-      // Load user profile
-      const userProfile = await DBService.getUserProfile() || undefined;
+      const userProfileData = await DBService.getUserProfile();
       
-      // Load folders
-      const folders = await DBService.getAllFolders();
+      const folders = await FolderService.getAllFolders(); // Use FolderService
       const foldersMap: { [id: string]: Folder } = {};
-      folders.forEach(folder => {
-        foldersMap[folder.id] = folder;
-      });
+      folders.forEach(folder => foldersMap[folder.id] = folder);
       
-      // Load templates or create defaults
-      let templates = await DBService.getAllTemplates();
+      let templates = await DBService.getAllTemplates(); // This can remain DBService for now
       if (templates.length === 0) {
         const defaultTemplates = await DBService.getDefaultTemplates();
         for (const template of defaultTemplates) {
@@ -121,105 +116,145 @@ export const useAppStore = create<AppStore>((set, get) => ({
       
       set({
         notes: notesMap,
-        ontology,
-        userProfile,
+        ontology: ontologyData,
+        userProfile: userProfileData || undefined,
         folders: foldersMap,
         templates: templatesMap,
       });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to initialize app:', error);
-      state.setError('notes', 'Failed to load data');
+      (get() as AppStore).setError('notes', `Failed to load data: ${error.message}`);
     } finally {
-      state.setLoading('notes', false);
-      state.setLoading('ontology', false);
+      (get() as AppStore).setLoading('notes', false);
+      (get() as AppStore).setLoading('ontology', false);
     }
   },
 
-  createNote: async (title = 'Untitled Note', content = '') => {
-    const id = uuidv4();
-    const now = new Date();
-    
-    const note: Note = {
-      id,
-      title,
-      content,
-      tags: [],
-      values: {},
-      fields: {},
-      status: 'draft',
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    await DBService.saveNote(note);
-    
+  createNote: async (partialNote?: Partial<Note>) => {
+    const newNote = await NoteService.createNote(partialNote || {});
     set(state => ({
-      notes: { ...state.notes, [id]: note },
-      currentNoteId: id,
-      editorContent: content,
+      notes: { ...state.notes, [newNote.id]: newNote },
+      currentNoteId: newNote.id,
+      editorContent: newNote.content,
       isEditing: true,
     }));
-    
-    return id;
+    return newNote.id;
   },
 
   updateNote: async (id: string, updates: Partial<Note>) => {
-    const state = get();
-    const existingNote = state.notes[id];
-    if (!existingNote) return;
-    
-    const updatedNote: Note = {
-      ...existingNote,
-      ...updates,
-      updatedAt: new Date(),
-    };
-    
-    await DBService.saveNote(updatedNote);
-    
-    set(state => ({
-      notes: { ...state.notes, [id]: updatedNote },
-    }));
+    const updatedNote = await NoteService.updateNote(id, updates);
+    if (updatedNote) {
+      set(state => ({
+        notes: { ...state.notes, [id]: updatedNote },
+        // If current note is updated, update editor content if it's different
+        ...(state.currentNoteId === id && state.editorContent !== updatedNote.content && { editorContent: updatedNote.content }),
+      }));
+    }
   },
 
   deleteNote: async (id: string) => {
-    await DBService.deleteNote(id);
+    const state = get();
+    const noteToDelete = state.notes[id];
+
+    await NoteService.deleteNote(id);
     
-    set(state => {
-      const newNotes = { ...state.notes };
+    // If note was in a folder, remove it from folder's noteIds
+    if (noteToDelete && noteToDelete.folderId) {
+      const folder = state.folders[noteToDelete.folderId];
+      if (folder) {
+        const updatedFolder = {
+          ...folder,
+          noteIds: folder.noteIds.filter(noteId => noteId !== id),
+          updatedAt: new Date()
+        };
+        await FolderService.updateFolder(folder.id, { noteIds: updatedFolder.noteIds }); // Persist only changed field
+        set(s => ({
+          folders: { ...s.folders, [folder.id]: updatedFolder }
+        }));
+      }
+    }
+
+    set(s => {
+      const newNotes = { ...s.notes };
       delete newNotes[id];
-      
       return {
         notes: newNotes,
-        currentNoteId: state.currentNoteId === id ? undefined : state.currentNoteId,
+        currentNoteId: s.currentNoteId === id ? undefined : s.currentNoteId,
       };
     });
   },
 
+  moveNoteToFolder: async (noteId: string, folderId: string | undefined) => {
+    const state = get();
+    const note = state.notes[noteId];
+    if (!note) return;
+
+    const oldFolderId = note.folderId;
+
+    // Update note's folderId
+    const updatedNote = await NoteService.updateNote(noteId, { folderId });
+    if (!updatedNote) return; // Should not happen if note exists
+
+    let newFoldersState = { ...state.folders };
+
+    // Remove from old folder's noteIds
+    if (oldFolderId) {
+      const oldFolder = state.folders[oldFolderId];
+      if (oldFolder) {
+        const updatedOldFolder = {
+          ...oldFolder,
+          noteIds: oldFolder.noteIds.filter(id => id !== noteId),
+          updatedAt: new Date(),
+        };
+        await FolderService.updateFolder(oldFolderId, { noteIds: updatedOldFolder.noteIds });
+        newFoldersState = { ...newFoldersState, [oldFolderId]: updatedOldFolder };
+      }
+    }
+
+    // Add to new folder's noteIds
+    if (folderId) {
+      const newFolder = state.folders[folderId];
+      if (newFolder) {
+        const updatedNewFolder = {
+          ...newFolder,
+          noteIds: [...new Set([...newFolder.noteIds, noteId])], // Avoid duplicates
+          updatedAt: new Date(),
+        };
+        await FolderService.updateFolder(folderId, { noteIds: updatedNewFolder.noteIds });
+        newFoldersState = { ...newFoldersState, [folderId]: updatedNewFolder };
+      }
+    }
+
+    set(s => ({
+      notes: { ...s.notes, [noteId]: updatedNote },
+      folders: newFoldersState,
+    }));
+  },
+
+
   setCurrentNote: (id: string | undefined) => {
     const state = get();
     const note = id ? state.notes[id] : undefined;
-    
     set({
       currentNoteId: id,
       editorContent: note?.content || '',
-      isEditing: !!id,
+      isEditing: !!id, // Automatically enter editing mode when a note is selected
+      // searchQuery: '', // Optionally clear search on note selection
     });
   },
 
-  searchNotes: async (query: string) => {
+  setSearchQuery: (query: string) => {
     set({ searchQuery: query });
-    // Note: Actual search filtering will be done in the UI components
-    // based on the searchQuery and searchFilters state
   },
 
-  setSearchFilters: (filters: SearchFilters) => {
-    set({ searchFilters: filters });
+  setSearchFilters: (filters: Partial<SearchFilters>) => {
+    set(state => ({ searchFilters: { ...state.searchFilters, ...filters } }));
   },
 
-  updateOntology: async (ontology: OntologyTree) => {
-    await DBService.saveOntology(ontology);
-    set({ ontology });
+  setOntology: async (ontology: OntologyTree) => {
+    await DBService.saveOntology(ontology); // Persist
+    set({ ontology }); // Update store
   },
 
   updateUserProfile: async (profile: UserProfile) => {
@@ -228,57 +263,121 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   createFolder: async (name: string, parentId?: string) => {
-    const id = uuidv4();
-    const now = new Date();
-    
-    const folder: Folder = {
-      id,
-      name,
-      parentId,
-      noteIds: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    await DBService.saveFolder(folder);
-    
-    set(state => ({
-      folders: { ...state.folders, [id]: folder },
-    }));
-    
-    return id;
+    try {
+      const newFolder = await FolderService.createFolder(name, parentId);
+      set(state => ({
+        folders: { ...state.folders, [newFolder.id]: newFolder },
+      }));
+      // If parentId, update parent in store as well
+      if (parentId && get().folders[parentId]) {
+        const parentFolder = get().folders[parentId];
+        const updatedParent = {
+            ...parentFolder,
+            children: [...(parentFolder.children || []), newFolder.id],
+            updatedAt: new Date()
+        };
+        set(state => ({
+            folders: { ...state.folders, [parentId]: updatedParent}
+        }))
+      }
+      return newFolder.id;
+    } catch (error) {
+      console.error("Failed to create folder:", error);
+      (get() as AppStore).setError('notes', `Failed to create folder: ${(error as Error).message}`);
+      return undefined;
+    }
+  },
+
   },
 
   updateFolder: async (id: string, updates: Partial<Folder>) => {
     const state = get();
-    const existingFolder = state.folders[id];
-    if (!existingFolder) return;
-    
-    const updatedFolder: Folder = {
-      ...existingFolder,
-      ...updates,
-      updatedAt: new Date(),
-    };
-    
-    await DBService.saveFolder(updatedFolder);
-    
-    set(state => ({
-      folders: { ...state.folders, [id]: updatedFolder },
-    }));
+    const oldFolder = state.folders[id];
+    if (!oldFolder) return;
+
+    const updatedFolder = await FolderService.updateFolder(id, updates);
+    if (updatedFolder) {
+      let newFoldersState = { ...state.folders, [id]: updatedFolder };
+
+      // Handle parent change logic for store state
+      const oldParentId = oldFolder.parentId;
+      const newParentId = updatedFolder.parentId;
+
+      if (newParentId !== oldParentId) {
+        // Remove from old parent's children in store
+        if (oldParentId && newFoldersState[oldParentId]) {
+          const oldParent = newFoldersState[oldParentId];
+          newFoldersState[oldParentId] = {
+            ...oldParent,
+            children: (oldParent.children || []).filter(childId => childId !== id),
+            updatedAt: new Date(),
+          };
+        }
+        // Add to new parent's children in store
+        if (newParentId && newFoldersState[newParentId]) {
+          const newParent = newFoldersState[newParentId];
+          newFoldersState[newParentId] = {
+            ...newParent,
+            children: [...new Set([...(newParent.children || []), id])],
+            updatedAt: new Date(),
+          };
+        }
+      }
+      set({ folders: newFoldersState });
+    }
   },
 
   deleteFolder: async (id: string) => {
-    await DBService.deleteFolder(id);
+    const state = get();
+    const folderToDelete = state.folders[id];
+    if (!folderToDelete) return;
+
+    // Create a flat map of all folders for FolderService to use
+    const allFoldersMap = { ...state.folders };
+
+    await FolderService.deleteFolder(id, allFoldersMap); // This handles DB updates
+
+    // Update store state based on what FolderService did (could be complex)
+    // For simplicity, re-fetch or derive new state. Here we manually update.
+    const newFolders = { ...state.folders };
+    const notesToUpdate = { ...state.notes };
+
+    // Collect all child folder IDs to delete from store state
+    const folderIdsToDelete: string[] = [id];
+    const collectChildren = (folderId: string) => {
+        const children = newFolders[folderId]?.children;
+        if (children) {
+            children.forEach(childId => {
+                folderIdsToDelete.push(childId);
+                collectChildren(childId);
+            });
+        }
+    };
+    collectChildren(id);
+
+    folderIdsToDelete.forEach(fid => delete newFolders[fid]);
     
-    set(state => {
-      const newFolders = { ...state.folders };
-      delete newFolders[id];
-      
-      return { folders: newFolders };
+    // Unassign notes from deleted folders in the store
+    Object.values(state.notes).forEach(note => {
+      if (note.folderId && folderIdsToDelete.includes(note.folderId)) {
+        notesToUpdate[note.id] = { ...note, folderId: undefined, updatedAt: new Date() };
+      }
     });
+
+    // Remove from parent's children list in store state
+    if (folderToDelete.parentId && newFolders[folderToDelete.parentId]) {
+        const parentFolder = newFolders[folderToDelete.parentId];
+        newFolders[folderToDelete.parentId] = {
+            ...parentFolder,
+            children: (parentFolder.children || []).filter(childId => childId !== id),
+            updatedAt: new Date()
+        };
+    }
+
+    set({ folders: newFolders, notes: notesToUpdate });
   },
 
-  createTemplate: async (templateData: Omit<NotentionTemplate, 'id'>) => {
+  createTemplate: async (templateData: Omit<NotentionTemplate, 'id'>) => { // Ensure param name matches
     const id = uuidv4();
     const template: NotentionTemplate = {
       ...templateData,

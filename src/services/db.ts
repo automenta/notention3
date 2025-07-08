@@ -44,6 +44,30 @@ const messagesStore = localforage.createInstance({
   description: 'Direct messages storage'
 });
 
+// Stores for sync queue
+const syncQueueNotesStore = localforage.createInstance({
+  name: 'Notention',
+  storeName: 'syncQueueNotes',
+  version: 1.0,
+  description: 'Queue for notes pending synchronization'
+});
+
+const syncFlagsStore = localforage.createInstance({
+  name: 'Notention',
+  storeName: 'syncFlags',
+  version: 1.0,
+  description: 'Simple flags for synchronization status'
+});
+
+export interface SyncQueueNoteOp {
+  noteId: string;
+  action: 'save' | 'delete'; // 'save' implies create or update
+  timestamp: Date; // Timestamp of the operation
+}
+
+const ONTOLOGY_NEEDS_SYNC_KEY = 'ontology_needs_sync';
+
+
 export class DBService {
   // Notes operations
   static async saveNote(note: Note): Promise<void> {
@@ -79,11 +103,21 @@ export class DBService {
 
   // Ontology operations
   static async saveOntology(ontology: OntologyTree): Promise<void> {
-    await ontologyStore.setItem('tree', ontology);
+    // Ensure updatedAt is set/updated.
+    const ontologyToSave = {
+      ...ontology,
+      updatedAt: new Date() // Always set to now on local save
+    };
+    await ontologyStore.setItem('tree', ontologyToSave);
   }
 
   static async getOntology(): Promise<OntologyTree | null> {
-    return await ontologyStore.getItem('tree');
+    const data = await ontologyStore.getItem<OntologyTree>('tree');
+    // Ensure updatedAt is a Date object if it exists
+    if (data && data.updatedAt && typeof data.updatedAt === 'string') {
+      return { ...data, updatedAt: new Date(data.updatedAt) };
+    }
+    return data;
   }
 
   static async getDefaultOntology(): Promise<OntologyTree> {
@@ -125,6 +159,31 @@ export class DBService {
 
   static async getUserProfile(): Promise<UserProfile | null> {
     return await userStore.getItem('profile');
+  }
+
+  // Nostr keys operations (scoped to userStore)
+  static async saveNostrPrivateKey(sk: string): Promise<void> {
+    await userStore.setItem('nostrPrivateKey', sk);
+  }
+
+  static async getNostrPrivateKey(): Promise<string | null> {
+    return await userStore.getItem('nostrPrivateKey');
+  }
+
+  static async removeNostrPrivateKey(): Promise<void> {
+    await userStore.removeItem('nostrPrivateKey');
+  }
+
+  static async saveNostrPublicKey(pk: string): Promise<void> {
+    await userStore.setItem('nostrPublicKey', pk);
+  }
+
+  static async getNostrPublicKey(): Promise<string | null> {
+    return await userStore.getItem('nostrPublicKey');
+  }
+
+  static async removeNostrPublicKey(): Promise<void> {
+    await userStore.removeItem('nostrPublicKey');
   }
 
   // Folders operations
@@ -271,5 +330,49 @@ export class DBService {
       templatesStore.clear(),
       messagesStore.clear()
     ]);
+    // Also clear sync queue stores
+    await Promise.all([
+      syncQueueNotesStore.clear(),
+      syncFlagsStore.clear()
+    ]);
+  }
+
+  // Sync Queue for Notes
+  static async addNoteToSyncQueue(op: SyncQueueNoteOp): Promise<void> {
+    // Store ops by noteId. If an op for a noteId already exists, this will overwrite it.
+    // This is suitable for a LWW strategy where only the latest state matters.
+    // Ensure timestamp is current for the operation.
+    await syncQueueNotesStore.setItem(op.noteId, {...op, timestamp: new Date()});
+  }
+
+  static async getPendingNoteSyncOps(): Promise<SyncQueueNoteOp[]> {
+    const ops: SyncQueueNoteOp[] = [];
+    await syncQueueNotesStore.iterate<SyncQueueNoteOp, void>((value) => {
+      // Ensure timestamp is a Date object
+      if (value.timestamp && typeof value.timestamp === 'string') {
+        value.timestamp = new Date(value.timestamp);
+      }
+      ops.push(value);
+    });
+    // Sort by timestamp to process older operations first, though with LWW overwrite, this might be less critical.
+    return ops.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }
+
+  static async removeNoteFromSyncQueue(noteId: string): Promise<void> {
+    await syncQueueNotesStore.removeItem(noteId);
+  }
+
+  static async clearNoteSyncQueue(): Promise<void> {
+    await syncQueueNotesStore.clear();
+  }
+
+  // Sync Flag for Ontology
+  static async setOntologyNeedsSync(needsSync: boolean): Promise<void> {
+    await syncFlagsStore.setItem(ONTOLOGY_NEEDS_SYNC_KEY, needsSync);
+  }
+
+  static async getOntologyNeedsSync(): Promise<boolean> {
+    const needsSync = await syncFlagsStore.getItem<boolean>(ONTOLOGY_NEEDS_SYNC_KEY);
+    return needsSync === null ? false : needsSync; // Default to false if not set
   }
 }

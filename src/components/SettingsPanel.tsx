@@ -1,4 +1,5 @@
-import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2 } from "lucide-react";
+import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck } from "lucide-react";
+import React, { useState } from "react"; // Import useState
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -8,9 +9,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { useAppStore } from "../store";
 import { DBService } from "../services/db";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogClose } from "./ui/dialog"; // Import Dialog components
 
 export function SettingsPanel() {
-  const { userProfile, updateUserProfile } = useAppStore();
+  const {
+    userProfile,
+    updateUserProfile,
+    generateAndStoreNostrKeys,
+    logoutFromNostr,
+    nostrRelays, // Get relays from store
+    addNostrRelay,    // Action to add relay
+    removeNostrRelay // Action to remove relay
+  } = useAppStore();
+
+  const [newSharedTag, setNewSharedTag] = useState("");
+  const [newSharedValueKey, setNewSharedValueKey] = useState("");
+  const [newSharedValueVal, setNewSharedValueVal] = useState("");
+  const [newRelayUrl, setNewRelayUrl] = useState("");
 
   const handleExportData = async () => {
     const data = await DBService.exportData();
@@ -47,32 +62,73 @@ export function SettingsPanel() {
     }
   };
 
-  const generateKeypair = () => {
-    // Placeholder for keypair generation
-    // In Phase 5, this will use nostr-tools to generate a real keypair
-    const mockKeypair = {
-      pubkey: 'npub1' + Math.random().toString(36).substring(2, 50),
-      privkey: 'nsec1' + Math.random().toString(36).substring(2, 50),
-    };
-    
-    if (userProfile) {
-      updateUserProfile({
-        ...userProfile,
-        nostrPubkey: mockKeypair.pubkey,
-        nostrPrivkey: mockKeypair.privkey,
-      });
-    } else {
-      updateUserProfile({
-        nostrPubkey: mockKeypair.pubkey,
-        nostrPrivkey: mockKeypair.privkey,
-        sharedTags: [],
-        preferences: {
-          theme: 'system',
-          aiEnabled: false,
-          defaultNoteStatus: 'draft',
-        },
-      });
+  const handleGenerateKeypair = async () => {
+    if (confirm('Are you sure you want to generate a new keypair? This will change your Nostr identity and you MUST back up the new private key.')) {
+      const newPublicKey = await generateAndStoreNostrKeys();
+      if (newPublicKey) {
+        alert(`New keypair generated! Your new public key is: ${newPublicKey}. Please ensure your private key is backed up (this app does not display it again after generation).`);
+      } else {
+        alert('Failed to generate keypair. Check console for errors.');
+      }
     }
+  };
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to log out? This will clear your local keys.')) {
+      await logoutFromNostr();
+      alert('Logged out successfully.');
+    }
+  };
+
+  const handleAddSharedTag = () => {
+    if (userProfile && newSharedTag && !userProfile.sharedTags.includes(newSharedTag)) {
+      updateUserProfile({ ...userProfile, sharedTags: [...userProfile.sharedTags, newSharedTag] });
+      setNewSharedTag("");
+    }
+  };
+
+  const handleRemoveSharedTag = (tagToRemove: string) => {
+    if (userProfile) {
+      updateUserProfile({ ...userProfile, sharedTags: userProfile.sharedTags.filter(tag => tag !== tagToRemove) });
+    }
+  };
+
+  const handleAddSharedValue = () => {
+    if (userProfile && newSharedValueKey && newSharedValueVal) {
+      const currentSharedValues = userProfile.sharedValues || [];
+      // Prevent duplicate keys for simplicity, or decide on update strategy
+      const existingIndex = currentSharedValues.findIndex(val => val.startsWith(newSharedValueKey + "::"));
+      const newEntry = `${newSharedValueKey}::${newSharedValueVal}`;
+      let updatedValues;
+      if (existingIndex > -1) {
+        updatedValues = [...currentSharedValues];
+        updatedValues[existingIndex] = newEntry;
+      } else {
+        updatedValues = [...currentSharedValues, newEntry];
+      }
+      updateUserProfile({ ...userProfile, sharedValues: updatedValues });
+      setNewSharedValueKey("");
+      setNewSharedValueVal("");
+    }
+  };
+
+  const handleRemoveSharedValue = (valueToRemove: string) => {
+    if (userProfile && userProfile.sharedValues) {
+      updateUserProfile({ ...userProfile, sharedValues: userProfile.sharedValues.filter(val => val !== valueToRemove) });
+    }
+  };
+
+  const handleAddRelay = () => {
+    if (newRelayUrl.trim() && !nostrRelays.includes(newRelayUrl.trim())) {
+      addNostrRelay(newRelayUrl.trim());
+      setNewRelayUrl("");
+    } else if (nostrRelays.includes(newRelayUrl.trim())) {
+      alert("Relay already exists.");
+    }
+  };
+
+  const handleRemoveRelay = (relayUrl: string) => {
+    removeNostrRelay(relayUrl);
   };
 
   const toggleTheme = () => {
@@ -104,40 +160,111 @@ export function SettingsPanel() {
           </CardHeader>
           <CardContent className="space-y-3">
             {userProfile ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div>
-                  <Label className="text-xs">Public Key</Label>
+                  <Label className="text-xs">Nostr Public Key (npub)</Label>
                   <Input
-                    value={userProfile.nostrPubkey}
+                    value={userProfile.nostrPubkey || "Not set"}
                     readOnly
-                    className="text-xs font-mono"
+                    className="text-xs font-mono h-8"
                   />
                 </div>
                 
+                {/* Shared Tags Management */}
                 <div>
-                  <Label className="text-xs">Shared Tags</Label>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {userProfile.sharedTags.length > 0 ? (
-                      userProfile.sharedTags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        No tags shared publicly
-                      </p>
+                  <Label className="text-xs block mb-1">Profile Tags</Label>
+                  <p className="text-xs text-muted-foreground mb-2">Tags to publicly associate with your profile for discovery.</p>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {userProfile.sharedTags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs group relative pr-6">
+                        {tag}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="absolute top-1/2 right-0.5 transform -translate-y-1/2 h-4 w-4 p-0 opacity-50 group-hover:opacity-100"
+                          onClick={() => handleRemoveSharedTag(tag)}
+                        >
+                          <Trash2 size={10}/>
+                        </Button>
+                      </Badge>
+                    ))}
+                    {userProfile.sharedTags.length === 0 && (
+                      <p className="text-xs text-muted-foreground italic">No profile tags defined.</p>
                     )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newSharedTag}
+                      onChange={(e) => setNewSharedTag(e.target.value)}
+                      placeholder="Add a tag (e.g. #developer)"
+                      className="text-xs h-8"
+                    />
+                    <Button size="sm" onClick={handleAddSharedTag} className="h-8">
+                      <Plus size={14}/>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Shared Values Management */}
+                <div>
+                  <Label className="text-xs block mb-1">Profile Key-Values</Label>
+                   <p className="text-xs text-muted-foreground mb-2">Key-value pairs to publicly associate with your profile.</p>
+                  <div className="space-y-1 mb-2">
+                    {(userProfile.sharedValues || []).map((valueEntry) => {
+                      const [key, ...valParts] = valueEntry.split('::');
+                      const val = valParts.join('::');
+                      return (
+                        <Badge key={valueEntry} variant="secondary" className="text-xs group relative pr-6 mr-1">
+                          {key}: {val}
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="absolute top-1/2 right-0.5 transform -translate-y-1/2 h-4 w-4 p-0 opacity-50 group-hover:opacity-100"
+                            onClick={() => handleRemoveSharedValue(valueEntry)}
+                          >
+                            <Trash2 size={10}/>
+                          </Button>
+                        </Badge>
+                      );
+                    })}
+                    {(!userProfile.sharedValues || userProfile.sharedValues.length === 0) && (
+                       <p className="text-xs text-muted-foreground italic">No profile key-values defined.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Label htmlFor="newSharedValueKey" className="text-xxs">Key</Label>
+                      <Input
+                        id="newSharedValueKey"
+                        value={newSharedValueKey}
+                        onChange={(e) => setNewSharedValueKey(e.target.value)}
+                        placeholder="e.g., location"
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Label htmlFor="newSharedValueVal" className="text-xxs">Value</Label>
+                      <Input
+                        id="newSharedValueVal"
+                        value={newSharedValueVal}
+                        onChange={(e) => setNewSharedValueVal(e.target.value)}
+                        placeholder="e.g., Earth"
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    <Button size="sm" onClick={handleAddSharedValue} className="h-8">
+                       <Plus size={14}/>
+                    </Button>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="text-center py-4">
                 <p className="text-sm text-muted-foreground mb-2">
-                  No profile set up
+                  User profile not fully loaded or not set up.
                 </p>
-                <Button size="sm" onClick={generateKeypair}>
-                  Create Profile
+                <Button size="sm" onClick={handleGenerateKeypair} variant="default">
+                  Initialize Profile & Generate Keys
                 </Button>
               </div>
             )}
@@ -158,15 +285,151 @@ export function SettingsPanel() {
                 variant="outline" 
                 size="sm" 
                 className="w-full justify-start"
-                onClick={generateKeypair}
+                onClick={handleGenerateKeypair} // Corrected handler
               >
                 <Key size={16} className="mr-2" />
-                Generate New Keypair
+                Generate New Keys
               </Button>
-              
-              <p className="text-xs text-muted-foreground">
-                Warning: Generating a new keypair will change your identity on the network.
+               <p className="text-xs text-muted-foreground mt-1">
+                Warning: This replaces your current keys. Back up your old private key if needed.
+                You MUST back up the new private key.
               </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start mt-2"
+                onClick={handleLogout}
+                disabled={!userProfile?.nostrPubkey}
+              >
+                <LogOut size={16} className="mr-2" />
+                Log Out & Clear Keys
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Nostr Relays Management */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Server size={16} /> Nostr Relays
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground mb-2">Manage the Nostr relays your app connects to.</p>
+            <div className="space-y-1 mb-2">
+              {nostrRelays.map((relayUrl) => (
+                <div key={relayUrl} className="flex items-center justify-between bg-muted p-1.5 rounded">
+                  <span className="text-xs font-mono truncate flex-1 mr-2">{relayUrl}</span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="h-5 w-5 p-0 text-destructive"
+                    onClick={() => handleRemoveRelay(relayUrl)}
+                  >
+                    <Trash2 size={12}/>
+                  </Button>
+                </div>
+              ))}
+              {nostrRelays.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No relays configured. Using defaults.</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newRelayUrl}
+                onChange={(e) => setNewRelayUrl(e.target.value)}
+                placeholder="wss://your.relay.com"
+                className="text-xs h-8"
+              />
+              <Button size="sm" onClick={handleAddRelay} className="h-8">
+                <Plus size={14}/> Add
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Privacy Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldCheck size={16} /> {/* Changed Icon */}
+              Note Sharing Privacy
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="sharePublicNotesGlobally" className="text-sm">Share Notes Publicly</Label>
+                <p className="text-xs text-muted-foreground">
+                  Allow publishing non-encrypted notes to the Nostr network.
+                </p>
+              </div>
+              <Switch
+                id="sharePublicNotesGlobally"
+                checked={userProfile?.privacySettings?.sharePublicNotesGlobally || false}
+                onCheckedChange={(checked) => {
+                  if (userProfile) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...(userProfile.privacySettings || { shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }), // keep other settings if they exist
+                        sharePublicNotesGlobally: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareTagsWithPublicNotes" className="text-sm">Share Tags with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include tags when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareTagsWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareTagsWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareTagsWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareValuesWithPublicNotes" className="text-sm">Share Values with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include key-value pairs when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareValuesWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareValuesWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareValuesWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
             </div>
           </CardContent>
         </Card>
@@ -221,10 +484,60 @@ export function SettingsPanel() {
                 }}
               />
             </div>
+
+            {userProfile?.preferences.aiEnabled && (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="ollamaApiEndpoint" className="text-sm">Ollama API Endpoint</Label>
+                  <Input
+                    id="ollamaApiEndpoint"
+                    value={userProfile.preferences.ollamaApiEndpoint || ""}
+                    placeholder="e.g., http://localhost:11434"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        updateUserProfile({
+                          ...userProfile,
+                          preferences: {
+                            ...userProfile.preferences,
+                            ollamaApiEndpoint: e.target.value,
+                          },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The local API endpoint for your Ollama instance.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="geminiApiKey" className="text-sm">Google Gemini API Key</Label>
+                  <Input
+                    id="geminiApiKey"
+                    type="password"
+                    value={userProfile.preferences.geminiApiKey || ""}
+                    placeholder="Enter your Gemini API Key"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        updateUserProfile({
+                          ...userProfile,
+                          preferences: {
+                            ...userProfile.preferences,
+                            geminiApiKey: e.target.value,
+                          },
+                        });
+                      }
+                    }}
+                  />
+                   <p className="text-xs text-muted-foreground">
+                    Your API key for Google Gemini (optional).
+                  </p>
+                </div>
+              </>
+            )}
             
             <p className="text-xs text-muted-foreground">
-              AI features will be available in Phase 7 with auto-tagging, 
-              ontology suggestions, and summarization.
+              AI features can help with ontology suggestions, auto-tagging, and summarization. Configure your preferred provider.
             </p>
           </CardContent>
         </Card>
@@ -287,11 +600,11 @@ export function SettingsPanel() {
               structure and Nostr integration.
             </p>
             <p>
-              Version 1.0.0 (Phase 1) - Core functionality and infrastructure
+              Version 0.6.0 (Implementing Phase 6)
             </p>
             <p>
-              Your data is stored locally and optionally shared via the 
-              decentralized Nostr network.
+              Your data is stored locally in your browser and can be optionally shared via the
+              decentralized Nostr network according to your privacy settings.
             </p>
           </CardContent>
         </Card>

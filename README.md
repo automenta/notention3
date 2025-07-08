@@ -73,18 +73,29 @@ A lightweight, client-side Progressive Web App (PWA) for decentralized note-taki
   - Real-time alerts for matches or channel activity in a notification bar.
 
 ### AI Enhancements (Optional)
-- **Ollama/Google Gemini Integration**:
-  - Local language model (e.g., LLaMA 3) for ontology and note enhancements.
-  - Enabled via settings toggle; requires user-installed Ollama.
-  - Uses LangChain.js for integration.
-  - Users with AI support share usable results with other users
+
+Notention can leverage local or cloud-based AI models to provide intelligent features. This is entirely optional and the application is fully functional without it.
+
+- **Integration**: Uses LangChain.js to connect with AI providers like a local Ollama instance or Google Gemini.
+- **Enabling AI**:
+  - Navigate to `Settings > AI Features`.
+  - Toggle "Enable AI" on.
+- **Configuration**:
+  - **Ollama**:
+    - Install Ollama on your local machine by following the instructions at [https://ollama.com](https://ollama.com).
+    - Once Ollama is running (e.g., `ollama serve`), ensure you have pulled a model (e.g., `ollama pull llama3`).
+    - In Notention's AI settings, enter your Ollama API endpoint (e.g., `http://localhost:11434`).
+  - **Google Gemini**:
+    - Obtain an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+    - In Notention's AI settings, enter your Gemini API Key.
+  - *Note*: You can configure one or both. The application may prioritize Gemini if both are available, unless otherwise specified.
 - **Features**:
-  - Embedding vectors: enabling an alternative matching strategy
-  - Ontology suggestions: propose concepts or relationships (e.g., `#DeepLearning` for `#AI`).
-  - Auto-tagging: suggest ontology-aligned tags for notes.
-  - Summarization: generate concise note summaries.
-- **Fallback**:
-  - Without AI, users manually manage ontology and tags; summarization unavailable.
+  - **Ontology Suggestions**: In the Ontology Editor, use the "AI Suggest" button to get ideas for new concepts or relationships based on your existing ontology and optional context you provide.
+  - **Auto-tagging**: While editing a note, use the "Auto-tag" button in the toolbar to let AI suggest relevant tags based on the note's content and your ontology.
+  - **Summarization**: Use the "Summarize" button in the Note Editor toolbar to generate a concise summary of the current note. The summary can be reviewed and optionally inserted into the note.
+  - **Embedding Vectors (Future)**: Future updates will explore using embedding vectors for enhanced semantic search and network matching.
+- **Fallback**: If AI is not enabled or configured, these features will be unavailable, but the application remains fully functional for manual note-taking and organization.
+- **Sharing AI Results**: Users with AI support can share usable results (e.g., AI-assisted tags on a published note) with other users, even those not using AI features.
 
 ### Client-Side PWA
 - **Offline-First**:

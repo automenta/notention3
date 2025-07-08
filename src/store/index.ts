@@ -1163,14 +1163,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const remoteNotes = await nostrService.fetchSyncedNotes(since, relays);
       let localNotesChanged = false;
 
+import DOMPurify from 'dompurify';
+
+// ... (rest of the imports and code)
+
+// In syncWithNostr action:
       for (const remoteNote of remoteNotes) {
         const localNote = notes[remoteNote.id]; // from get()
         const remoteNoteUpdatedAt = new Date(remoteNote.updatedAt || 0);
 
         if (!localNote || (remoteNoteUpdatedAt > new Date(localNote.updatedAt || 0))) {
           console.log(`Remote note ${remoteNote.id} is newer or new. Updating local.`);
-          await DBService.saveNote(remoteNote);
-          set(s => ({ notes: { ...s.notes, [remoteNote.id]: remoteNote } }));
+          // Sanitize content from remote note before saving
+          const sanitizedContent = DOMPurify.sanitize(remoteNote.content);
+          const noteToSave = { ...remoteNote, content: sanitizedContent };
+
+          await DBService.saveNote(noteToSave);
+          set(s => ({ notes: { ...s.notes, [remoteNote.id]: noteToSave } }));
           localNotesChanged = true;
         }
         // If local is newer, it will be handled by pending sync ops processing.

@@ -260,6 +260,185 @@ describe('NostrService', () => {
       await expect(serviceInstance.decryptMessage('payload', 'otherPk')).rejects.toThrow('User not logged in or private key not available for decryption.');
     });
   });
+
+  // --- Tests for Sync Specific Methods ---
+  describe('Sync Methods', () => {
+    const mockNote: Note = {
+      id: 'syncNote1',
+      title: 'Sync Test Note',
+      content: 'Content to be synced',
+      tags: ['#sync'],
+      values: { status: 'pending' },
+      status: 'draft',
+      createdAt: new Date(2023, 0, 10, 10, 0, 0),
+      updatedAt: new Date(2023, 0, 10, 11, 0, 0),
+      fields: {},
+    };
+    const mockOntology = {
+      nodes: { root: { id: 'root', label: '#Root', children: [] } },
+      rootIds: ['root'],
+      updatedAt: new Date(2023, 0, 11, 10, 0, 0),
+    };
+    const defaultRelays = ['wss://sync.relay.example'];
+
+    beforeEach(async () => {
+      await serviceInstance.storeKeyPair('syncSk', 'syncPk');
+      (serviceInstance as any).defaultRelays = defaultRelays;
+      // Reset SimplePool mock results for list/get if needed
+      (mockPool.list as any).mockReset();
+      (mockPool.get as any).mockReset();
+    });
+
+    describe('publishNoteForSync', () => {
+      it('should publish a note encrypted to self for sync', async () => {
+        await serviceInstance.publishNoteForSync(mockNote);
+
+        expect(nip04.encrypt).toHaveBeenCalledWith('syncSk', 'syncPk', JSON.stringify(mockNote));
+        expect(mockPool.publish).toHaveBeenCalledTimes(1);
+        const publishedEvent = mockPool.publish.mock.calls[0][1];
+
+        expect(publishedEvent.kind).toBe(4); // Encrypted DM
+        expect(publishedEvent.pubkey).toBe('syncPk');
+        expect(publishedEvent.content).toBe(`encrypted_${JSON.stringify(mockNote)}_by_syncSk_for_syncPk`);
+        expect(publishedEvent.tags).toEqual(expect.arrayContaining([
+          ['p', 'syncPk'],
+          ['d', `notention-note-sync:${mockNote.id}`],
+        ]));
+        expect(publishedEvent.created_at).toBe(Math.floor(mockNote.updatedAt.getTime() / 1000));
+      });
+
+      it('should throw error if not logged in', async () => {
+        await serviceInstance.clearKeyPair();
+        await expect(serviceInstance.publishNoteForSync(mockNote)).rejects.toThrow('User not logged in');
+      });
+    });
+
+    describe('fetchSyncedNotes', () => {
+      it('should fetch and decrypt synced notes', async () => {
+        const remoteEvent = {
+          kind: 4,
+          pubkey: 'syncPk',
+          created_at: Math.floor(mockNote.updatedAt.getTime() / 1000),
+          tags: [['p', 'syncPk'], ['d', `notention-note-sync:${mockNote.id}`]],
+          content: `encrypted_${JSON.stringify(mockNote)}_by_syncSk_for_syncPk`, // Mocked encryption
+          id: 'event1',
+          sig: 'sig1',
+        };
+        (mockPool.list as any).mockResolvedValue([remoteEvent]);
+
+        const fetchedNotes = await serviceInstance.fetchSyncedNotes();
+
+        expect(mockPool.list).toHaveBeenCalledWith(defaultRelays, [expect.objectContaining({
+          kinds: [4],
+          authors: ['syncPk'],
+          '#p': ['syncPk'],
+        })]);
+        expect(nip04.decrypt).toHaveBeenCalledWith('syncSk', 'syncPk', remoteEvent.content);
+        expect(fetchedNotes).toHaveLength(1);
+        expect(fetchedNotes[0].id).toBe(mockNote.id);
+        expect(fetchedNotes[0].content).toBe(mockNote.content);
+        // Dates will be stringified then parsed, check if they match original Date objects
+        expect(fetchedNotes[0].createdAt.toISOString()).toBe(mockNote.createdAt.toISOString());
+        expect(fetchedNotes[0].updatedAt.toISOString()).toBe(mockNote.updatedAt.toISOString());
+      });
+
+       it('should filter events not matching the sync d tag', async () => {
+        const syncEvent = {
+          kind: 4, pubkey: 'syncPk', created_at: 1000,
+          tags: [['p', 'syncPk'], ['d', `notention-note-sync:note1`]],
+          content: `encrypted_${JSON.stringify({id: "note1", content:"content1"})}_by_syncSk_for_syncPk`,
+          id: 'event1', sig: 'sig1'
+        };
+        const otherDMEvent = { // A regular DM to self, not a sync event
+          kind: 4, pubkey: 'syncPk', created_at: 1001,
+          tags: [['p', 'syncPk'], ['d', 'some-other-identifier']],
+          content: `encrypted_${JSON.stringify({id: "dm1", content:"dm content"})}_by_syncSk_for_syncPk`,
+          id: 'event2', sig: 'sig2'
+        };
+        (mockPool.list as any).mockResolvedValue([syncEvent, otherDMEvent]);
+
+        const fetchedNotes = await serviceInstance.fetchSyncedNotes();
+        expect(fetchedNotes).toHaveLength(1);
+        expect(fetchedNotes[0].id).toBe("note1");
+      });
+
+      it('should return empty array if not logged in', async () => {
+        await serviceInstance.clearKeyPair();
+         // This will throw an error, so we test for the throw
+        await expect(serviceInstance.fetchSyncedNotes()).rejects.toThrow('User not logged in');
+      });
+    });
+
+    describe('publishOntologyForSync', () => {
+      it('should publish ontology as a replaceable event (Kind 30001)', async () => {
+        await serviceInstance.publishOntologyForSync(mockOntology);
+
+        expect(mockPool.publish).toHaveBeenCalledTimes(1);
+        const publishedEvent = mockPool.publish.mock.calls[0][1];
+
+        expect(publishedEvent.kind).toBe(30001);
+        expect(publishedEvent.pubkey).toBe('syncPk');
+        expect(publishedEvent.content).toBe(JSON.stringify(mockOntology));
+        expect(publishedEvent.tags).toEqual([['d', 'notention-ontology-sync']]);
+        expect(publishedEvent.created_at).toBe(Math.floor(mockOntology.updatedAt.getTime() / 1000));
+      });
+
+      it('should throw error if not logged in', async () => {
+        await serviceInstance.clearKeyPair();
+        await expect(serviceInstance.publishOntologyForSync(mockOntology)).rejects.toThrow('User not logged in');
+      });
+    });
+
+    describe('fetchSyncedOntology', () => {
+      it('should fetch and parse synced ontology', async () => {
+        const remoteOntologyEvent = {
+          kind: 30001,
+          pubkey: 'syncPk',
+          created_at: Math.floor(mockOntology.updatedAt.getTime() / 1000),
+          tags: [['d', 'notention-ontology-sync']],
+          content: JSON.stringify(mockOntology),
+          id: 'eventOntology',
+          sig: 'sigOntology',
+        };
+        (mockPool.list as any).mockResolvedValue([remoteOntologyEvent]);
+
+        const fetchedOntology = await serviceInstance.fetchSyncedOntology();
+
+        expect(mockPool.list).toHaveBeenCalledWith(defaultRelays, [expect.objectContaining({
+          kinds: [30001],
+          authors: ['syncPk'],
+          '#d': ['notention-ontology-sync'],
+          limit: 1,
+        })]);
+        expect(fetchedOntology).toEqual(mockOntology);
+        expect(fetchedOntology.updatedAt.toISOString()).toBe(mockOntology.updatedAt.toISOString());
+
+      });
+
+      it('should return null if no ontology event is found', async () => {
+        (mockPool.list as any).mockResolvedValue([]);
+        const fetchedOntology = await serviceInstance.fetchSyncedOntology();
+        expect(fetchedOntology).toBeNull();
+      });
+
+      it('should return null if not logged in', async () => {
+        await serviceInstance.clearKeyPair();
+        await expect(serviceInstance.fetchSyncedOntology()).rejects.toThrow('User not logged in');
+      });
+
+      it('should sort multiple ontology events and return the latest', async () => {
+        const olderOntology = { ...mockOntology, updatedAt: new Date(2023,0,1) };
+        const newerOntology = { ...mockOntology, updatedAt: new Date(2023,0,15) };
+        const event1 = { kind: 30001, pubkey: 'syncPk', created_at: Math.floor(olderOntology.updatedAt.getTime() / 1000), tags: [['d', 'notention-ontology-sync']], content: JSON.stringify(olderOntology), id: 'e1', sig: 's1'};
+        const event2 = { kind: 30001, pubkey: 'syncPk', created_at: Math.floor(newerOntology.updatedAt.getTime() / 1000), tags: [['d', 'notention-ontology-sync']], content: JSON.stringify(newerOntology), id: 'e2', sig: 's2'};
+
+        (mockPool.list as any).mockResolvedValue([event1, event2]); // Relays might return in any order
+
+        const fetchedOntology = await serviceInstance.fetchSyncedOntology();
+        expect(fetchedOntology.updatedAt.toISOString()).toBe(newerOntology.updatedAt.toISOString());
+      });
+    });
+  });
 });
 
 // Helper to access the singleton instance for testing, assuming it's exported as `nostrService`

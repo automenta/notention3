@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save } from "lucide-react";
+import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Sparkles, Wand2 } from "lucide-react"; // Added Sparkles, Wand2
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea"; // Added Textarea
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -9,10 +10,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useAppStore } from "../store";
 import { OntologyNode, OntologyTree } from "../../shared/types";
 import { OntologyService } from "../services/ontology";
+import { aiService } from "../services/AIService"; // Import AI Service
+import { toast } from "sonner"; // For notifications
+import { LoadingSpinner } from "./ui/loading-spinner"; // For loading state
 
 export function OntologyEditor() {
-  const { ontology, updateOntology, setOntology: setStoreOntology } = useAppStore();
+  const { ontology, updateOntology, setOntology: setStoreOntology, userProfile } = useAppStore();
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+  // AI Suggestions State
+  const [isAISuggestionsDialogOpen, setIsAISuggestionsDialogOpen] = useState(false);
+  const [aiSuggestionContext, setAISuggestionContext] = useState("");
+  const [aiSuggestions, setAISuggestions] = useState<any[]>([]); // Type appropriately later
+  const [isFetchingAISuggestions, setIsFetchingAISuggestions] = useState(false);
+
 
   // State for adding a new node
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -104,6 +115,49 @@ export function OntologyEditor() {
     });
   }
 
+  const handleFetchAISuggestions = async () => {
+    if (!aiService.isAIEnabled()) {
+      toast.error("AI features are not enabled. Please check your settings.");
+      return;
+    }
+    setIsFetchingAISuggestions(true);
+    setAISuggestions([]); // Clear previous suggestions
+    try {
+      const suggestions = await aiService.getOntologySuggestions(ontology, aiSuggestionContext);
+      if (suggestions && suggestions.length > 0) {
+        setAISuggestions(suggestions);
+        toast.success("AI suggestions received!");
+      } else {
+        toast.info("AI did not return any suggestions for the given context.");
+      }
+    } catch (error: any) {
+      console.error("Error fetching AI ontology suggestions:", error);
+      toast.error("Failed to get AI suggestions.", { description: error.message });
+    } finally {
+      setIsFetchingAISuggestions(false);
+    }
+  };
+
+  const handleAddSuggestedNode = async (suggestedNode: { label: string, parentId?: string, attributes?: any }) => {
+    // Basic implementation: adds the node. Does not handle complex relationships or attribute types yet.
+    if (!suggestedNode.label) {
+      toast.error("Suggested node is missing a label.");
+      return;
+    }
+    try {
+      const newNode = OntologyService.createNode(suggestedNode.label, suggestedNode.parentId, suggestedNode.attributes);
+      const newOntology = OntologyService.addNode(ontology, newNode);
+      await updateOntology(newOntology);
+      setStoreOntology(newOntology);
+      toast.success(`Added suggested concept: ${suggestedNode.label}`);
+      // Remove the added suggestion from the list
+      setAISuggestions(prev => prev.filter(s => s.label !== suggestedNode.label));
+    } catch (error: any) {
+      toast.error("Failed to add suggested node.", { description: error.message });
+    }
+  };
+
+
   const renderNode = (node: OntologyNode, level: number = 0) => {
     const children = getChildNodes(node.id);
     const hasChildren = children.length > 0;
@@ -171,20 +225,78 @@ export function OntologyEditor() {
       <div className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Ontology</h2>
-          
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus size={16} /> Add Concept
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Concept</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div>
-                  <label htmlFor="newNodeLabel" className="text-sm font-medium">Label</label>
+          <div className="flex items-center gap-2">
+            {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
+              <Dialog open={isAISuggestionsDialogOpen} onOpenChange={setIsAISuggestionsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Sparkles size={16} className="mr-2" /> AI Suggest
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>AI Ontology Suggestions</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div>
+                      <label htmlFor="aiSuggestionContext" className="text-sm font-medium">
+                        Context (Optional)
+                      </label>
+                      <Textarea
+                        id="aiSuggestionContext"
+                        value={aiSuggestionContext}
+                        onChange={(e) => setAISuggestionContext(e.target.value)}
+                        placeholder="Provide context like a note, a domain, or specific area of interest..."
+                        className="min-h-[80px]"
+                      />
+                    </div>
+                    <Button onClick={handleFetchAISuggestions} disabled={isFetchingAISuggestions} className="w-full">
+                      {isFetchingAISuggestions ? (
+                        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Wand2 size={16} className="mr-2" />
+                      )}
+                      Get Suggestions
+                    </Button>
+                    {aiSuggestions.length > 0 && (
+                      <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
+                        <h3 className="text-sm font-medium">Suggestions:</h3>
+                        {aiSuggestions.map((suggestion, index) => (
+                          <Card key={index} className="p-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-semibold">{suggestion.label}</p>
+                              <Button size="xs" onClick={() => handleAddSuggestedNode(suggestion)}>
+                                <Plus size={12} className="mr-1"/> Add
+                              </Button>
+                            </div>
+                            {suggestion.parentId && <p className="text-xs text-muted-foreground">Parent: {ontology.nodes[suggestion.parentId]?.label || suggestion.parentId}</p>}
+                            {suggestion.attributes && <p className="text-xs text-muted-foreground">Attributes: {JSON.stringify(suggestion.attributes)}</p>}
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">Close</Button>
+                    </DialogClose>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus size={16} /> Add Concept
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Concept</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div>
+                    <label htmlFor="newNodeLabel" className="text-sm font-medium">Label</label>
                   <Input
                     id="newNodeLabel"
                     value={newNodeLabel}

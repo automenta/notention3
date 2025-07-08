@@ -14,12 +14,15 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "./ui/dialog"; // Added DialogFooter, DialogClose
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Save, Share, Archive, Pin, Bold, Italic, Link as LinkIcon, Hash, AtSign, Plus, Settings } from "lucide-react";
+import { Save, Share, Archive, Pin, Bold, Italic, Link as LinkIcon, Hash, AtSign, Plus, Settings, Sparkles, Wand2, FileText } from "lucide-react"; // Added Sparkles, Wand2, FileText
 import { useAppStore } from "../store";
+import { aiService } from "../services/AIService"; // Import AI Service
+import { toast } from "sonner"; // For notifications
+import { LoadingSpinner } from "./ui/loading-spinner"; // For loading state
 
 export function NoteEditor() {
   const { 
@@ -30,11 +33,18 @@ export function NoteEditor() {
     updateNote,
     isEditing,
     ontology,
-    templates
+    templates,
+    userProfile // Added userProfile to check AI settings
   } = useAppStore();
 
   const currentNote = currentNoteId ? notes[currentNoteId] : null;
   const [showMetadata, setShowMetadata] = useState(false);
+
+  // AI Feature States
+  const [isAutoTagging, setIsAutoTagging] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [currentSummary, setCurrentSummary] = useState("");
   const [newTag, setNewTag] = useState("");
   const [newValueKey, setNewValueKey] = useState("");
   const [newValueValue, setNewValueValue] = useState("");
@@ -350,6 +360,68 @@ export function NoteEditor() {
     return Array.from(allTags);
   }, [ontology]);
 
+  const handleAutoTag = async () => {
+    if (!currentNoteId || !currentNote || !editor || !aiService.isAIEnabled()) {
+      toast.error("Cannot auto-tag.", { description: "Ensure a note is selected, you are editing, and AI features are enabled." });
+      return;
+    }
+    setIsAutoTagging(true);
+    try {
+      // Use editor.getText() for plain text content for better AI processing
+      const plainTextContent = editor.getText();
+      const suggestedTags = await aiService.getAutoTags(plainTextContent, currentNote.title, ontology);
+
+      if (suggestedTags && suggestedTags.length > 0) {
+        const newTags = [...new Set([...currentNote.tags, ...suggestedTags])]; // Merge and deduplicate
+        await updateNote(currentNoteId, { tags: newTags });
+        toast.success("AI auto-tagging complete!", { description: `${suggestedTags.length} new tags suggested.` });
+      } else {
+        toast.info("AI did not suggest any new tags.");
+      }
+    } catch (error: any) {
+      toast.error("Auto-tagging failed.", { description: error.message });
+    } finally {
+      setIsAutoTagging(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!currentNoteId || !currentNote || !editor || !aiService.isAIEnabled()) {
+      toast.error("Cannot summarize.", { description: "Ensure a note is selected and AI features are enabled." });
+      return;
+    }
+    setIsSummarizing(true);
+    setCurrentSummary("");
+    try {
+      const plainTextContent = editor.getText();
+      const summary = await aiService.getSummarization(plainTextContent, currentNote.title);
+      if (summary) {
+        setCurrentSummary(summary);
+        setShowSummaryModal(true);
+        toast.success("AI summarization complete!");
+      } else {
+        toast.info("AI could not generate a summary for this note.");
+      }
+    } catch (error: any) {
+      toast.error("Summarization failed.", { description: error.message });
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const insertSummaryIntoEditor = () => {
+    if (editor && currentSummary) {
+      // Example: Insert summary at the beginning of the note, clearly marked.
+      const currentContent = editor.getHTML();
+      const summaryBlock = `<p><strong>AI Summary:</strong></p><p>${currentSummary}</p><hr>`;
+      editor.commands.setContent(summaryBlock + currentContent, true); // `true` to parse HTML
+      setShowSummaryModal(false);
+      toast.info("Summary inserted into note.");
+      // Trigger save after insertion
+      handleSave();
+    }
+  };
+
 
   if (!isEditing || !currentNoteId || !currentNote) {
     return (
@@ -454,6 +526,33 @@ export function NoteEditor() {
           )}
           
           <div className="w-px h-6 bg-border mx-1" />
+
+          {/* AI Features Buttons */}
+          {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && isEditing && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAutoTag}
+                disabled={isAutoTagging || !editor}
+                title="AI Auto-tag"
+              >
+                {isAutoTagging ? <LoadingSpinner className="h-4 w-4" /> : <Sparkles size={16} />}
+                <span className="ml-1 hidden sm:inline">Auto-tag</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSummarize}
+                disabled={isSummarizing || !editor}
+                title="AI Summarize"
+              >
+                {isSummarizing ? <LoadingSpinner className="h-4 w-4" /> : <FileText size={16} />}
+                 <span className="ml-1 hidden sm:inline">Summarize</span>
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
+            </>
+          )}
           
           {/* Metadata toggle can be part of a more general settings/info panel for the note */}
           <Button
@@ -465,6 +564,30 @@ export function NoteEditor() {
             <span className="ml-1 hidden sm:inline">Info</span>
           </Button>
         </div>
+
+        {/* Summary Modal */}
+        {showSummaryModal && (
+          <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>AI Generated Summary</DialogTitle>
+              </DialogHeader>
+              <ScrollArea className="max-h-[60vh] my-4">
+                <p className="text-sm whitespace-pre-wrap">{currentSummary}</p>
+              </ScrollArea>
+              <DialogFooter className="gap-2 sm:justify-end">
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">
+                    Close
+                  </Button>
+                </DialogClose>
+                <Button type="button" onClick={insertSummaryIntoEditor} disabled={!editor || !isEditing}>
+                  Insert into Note
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Display Tags from metadata - these are the "source of truth" */}
         {currentNote.tags && currentNote.tags.length > 0 && (

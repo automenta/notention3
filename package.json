@@ -79,7 +79,8 @@
     "vite-plugin-pwa": "^1.0.1",
     "workbox-window": "^7.3.0",
     "zod": "^3.25.20",
-    "zustand": "^5.0.6"
+    "zustand": "^5.0.6",
+    "langchain": "^0.2.11"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",

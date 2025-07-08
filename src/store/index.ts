@@ -148,7 +148,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         userProfileData = {
           nostrPubkey: '',
           sharedTags: [],
-          preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' },
+          preferences: {
+            theme: 'system',
+            aiEnabled: false,
+            defaultNoteStatus: 'draft',
+            ollamaApiEndpoint: '',
+            geminiApiKey: ''
+          },
           nostrRelays: defaultRelays,
           privacySettings: { // Add default privacy settings
             sharePublicNotesGlobally: false,
@@ -169,6 +175,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
         relaysToUseInStore = userProfileData.nostrRelays;
       }
+      // Ensure preferences and new AI fields have defaults
+      userProfileData.preferences = {
+        theme: 'system',
+        aiEnabled: false,
+        defaultNoteStatus: 'draft',
+        ollamaApiEndpoint: '',
+        geminiApiKey: '',
+        ...userProfileData.preferences, // Spread existing preferences to keep them
+      };
       
       const folders = await FolderService.getAllFolders(); // Use FolderService
       const foldersMap: { [id: string]: Folder } = {};
@@ -545,7 +560,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
           const newProfile: UserProfile = {
             nostrPubkey: pk!,
             sharedTags: [],
-            preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' },
+            preferences: {
+              theme: 'system',
+              aiEnabled: false,
+              defaultNoteStatus: 'draft',
+              ollamaApiEndpoint: '',
+              geminiApiKey: ''
+            },
             nostrRelays: defaultRelays,
             privacySettings: { // Default privacy settings
               sharePublicNotesGlobally: false,
@@ -622,7 +643,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         userProfile = {
           nostrPubkey: pkToStore,
           sharedTags: [],
-          preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' },
+          preferences: {
+            theme: 'system',
+            aiEnabled: false,
+            defaultNoteStatus: 'draft',
+            ollamaApiEndpoint: '',
+            geminiApiKey: ''
+          },
           nostrRelays: currentRelaysInStore,
           privacySettings: defaultPrivacySettings,
         };
@@ -972,23 +999,47 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateUserProfile: async (profileUpdates: Partial<UserProfile>) => {
-    const currentProfile = get().userProfile ||
-        { nostrPubkey: '', sharedTags: [], preferences: { theme: 'system', aiEnabled: false, defaultNoteStatus: 'draft' }};
+    const currentProfile = get().userProfile;
+
+    // Define default preferences to ensure all fields are present
+    const defaultPreferences = {
+      theme: 'system' as const, // Use 'as const' for literal types
+      aiEnabled: false,
+      defaultNoteStatus: 'draft' as const,
+      ollamaApiEndpoint: '',
+      geminiApiKey: '',
+    };
+
+    const defaultPrivacySettings = {
+      sharePublicNotesGlobally: false,
+      shareTagsWithPublicNotes: true,
+      shareValuesWithPublicNotes: true,
+    };
+
+    const defaultBaseProfile = {
+        nostrPubkey: '',
+        sharedTags: [],
+        nostrRelays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'], // Default relays if none exist
+        preferences: defaultPreferences,
+        privacySettings: defaultPrivacySettings,
+    };
+
+    const baseProfile = currentProfile || defaultBaseProfile;
 
     const updatedProfile = {
-        ...currentProfile,
-        ...profileUpdates,
-        preferences: {
-            ...currentProfile.preferences,
-            ...profileUpdates.preferences,
-        },
-        // Ensure privacySettings and nostrRelays are preserved if not explicitly in profileUpdates
-        privacySettings: {
-          ...(currentProfile.privacySettings || { sharePublicNotesGlobally: false, shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }),
-          ...profileUpdates.privacySettings,
-        },
-        nostrRelays: profileUpdates.nostrRelays || currentProfile.nostrRelays || [],
+      ...baseProfile, // Start with a complete base (either current or default)
+      ...profileUpdates, // Apply incoming updates
+      preferences: {
+        ...baseProfile.preferences, // Ensure all preference fields from base are carried over
+        ...(profileUpdates.preferences || {}), // Apply specific preference updates
+      },
+      privacySettings: {
+        ...baseProfile.privacySettings, // Ensure all privacy fields from base are carried over
+        ...(profileUpdates.privacySettings || {}), // Apply specific privacy updates
+      },
+      nostrRelays: profileUpdates.nostrRelays || baseProfile.nostrRelays, // Preserve or update relays
     };
+
     await DBService.saveUserProfile(updatedProfile);
     set({ userProfile: updatedProfile });
   },

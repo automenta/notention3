@@ -484,9 +484,60 @@ export function SettingsPanel() {
                 }}
               />
             </div>
+
+            {userProfile?.preferences.aiEnabled && (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="ollamaApiEndpoint" className="text-sm">Ollama API Endpoint</Label>
+                  <Input
+                    id="ollamaApiEndpoint"
+                    value={userProfile.preferences.ollamaApiEndpoint || ""}
+                    placeholder="e.g., http://localhost:11434"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        updateUserProfile({
+                          ...userProfile,
+                          preferences: {
+                            ...userProfile.preferences,
+                            ollamaApiEndpoint: e.target.value,
+                          },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The local API endpoint for your Ollama instance.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="geminiApiKey" className="text-sm">Google Gemini API Key</Label>
+                  <Input
+                    id="geminiApiKey"
+                    type="password"
+                    value={userProfile.preferences.geminiApiKey || ""}
+                    placeholder="Enter your Gemini API Key"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        updateUserProfile({
+                          ...userProfile,
+                          preferences: {
+                            ...userProfile.preferences,
+                            geminiApiKey: e.target.value,
+                          },
+                        });
+                      }
+                    }}
+                  />
+                   <p className="text-xs text-muted-foreground">
+                    Your API key for Google Gemini (optional).
+                  </p>
+                </div>
+              </>
+            )}
             
             <p className="text-xs text-muted-foreground">
-              These settings control what information is included when you publish notes publicly (non-encrypted) to Nostr.
+              AI features can help with ontology suggestions, auto-tagging, and summarization. Configure your preferred provider.
             </p>
           </CardContent>
         </Card>

@@ -37,6 +37,8 @@ export interface UserProfile {
     theme: "light" | "dark" | "system";
     aiEnabled: boolean;
     defaultNoteStatus: "draft" | "published";
+    ollamaApiEndpoint?: string;
+    geminiApiKey?: string;
   };
   nostrRelays?: string[]; // User's preferred relays
   privacySettings?: {

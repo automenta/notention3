@@ -1,7 +1,7 @@
 // Vitest setup and imports (assuming Vitest is configured)
-// import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// import { AIService, aiService } from './AIService';
-// import { useAppStore } from '../store';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { AIService, aiService } from './AIService';
+import { useAppStore } from '../store';
 // import { Ollama } from "@langchain/community/llms/ollama";
 // import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
@@ -17,22 +17,32 @@
 //   }
 // }));
 
-const mockGetState = vi.fn();
-const mockSubscribe = vi.fn();
+// These will be initialized in beforeEach or within the mock factory for the store
+let mockGetState: ReturnType<typeof vi.fn>;
+let mockSubscribe: ReturnType<typeof vi.fn>;
+
 
 // Example of how useAppStore could be mocked for testing AIService
-const mockUseAppStore = {
-  getState: mockGetState,
-  subscribe: mockSubscribe,
-};
+// const mockUseAppStore = {
+//   getState: mockGetState,
+//   subscribe: mockSubscribe,
+// };
 
 // Placeholder for AIService if not directly importable or needs instance
-let testAiServiceInstance: any;
+// let testAiServiceInstance: any; // AIService is a class, aiService is an instance
 
 describe('AIService', () => {
   beforeEach(() => {
+    mockGetState = vi.fn();
+    mockSubscribe = vi.fn();
+
     // Reset mocks before each test
     mockGetState.mockReset();
+    mockSubscribe.mockReset(); // Added reset for mockSubscribe
+
+    // If useAppStore is mocked via vi.mock, this is where you'd set its mockReturnValue
+    // For example: (useAppStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({ ... });
+
     // Simulate the creation of a new AIService instance if necessary,
     // or ensure the global `aiService` is re-evaluated with new mocks.
     // This depends on how AIService is instantiated and whether it's a true singleton
@@ -168,28 +178,30 @@ describe('AIService', () => {
 
 });
 
-// Placeholder to make file valid TypeScript in this environment
-export {};
-const vi = {
-  fn: () => {},
-  mock: () => {},
-  resetAllMocks: () => {},
-  clearAllMocks: () => {},
-  spyOn: () => ({ mockReturnValue: () => {}, mockResolvedValue: () => {} }),
-};
-const describe = (s: string, f: () => void) => f();
-const it = (s: string, f: () => void) => f();
-const expect = (v: any) => ({
-  toBe: (v2: any) => {},
-  toEqual: (v2: any) => {},
-  toHaveBeenCalled: () => {},
-  toHaveBeenCalledWith: (...args: any[]) => {},
-  not: {
-    toHaveBeenCalled: () => {}
-  }
-});
-const beforeEach = (f: () => void) => f();
-const afterEach = (f: () => void) => f();
+// Placeholder to make file valid TypeScript in this environment if not using full Vitest run
+// export {};
 
-class Ollama {}
-class ChatGoogleGenerativeAI {}
+// These are now imported from 'vitest' so placeholders below are not needed if tests run with Vitest runner
+// const vi = {
+//   fn: () => {},
+//   mock: () => {},
+//   resetAllMocks: () => {},
+//   clearAllMocks: () => {},
+//   spyOn: () => ({ mockReturnValue: () => {}, mockResolvedValue: () => {} }),
+// };
+// const describe = (s: string, f: () => void) => f();
+// const it = (s: string, f: () => void) => f();
+// const expect = (v: any) => ({
+//   toBe: (v2: any) => {},
+//   toEqual: (v2: any) => {},
+//   toHaveBeenCalled: () => {},
+//   toHaveBeenCalledWith: (...args: any[]) => {},
+//   not: {
+//     toHaveBeenCalled: () => {}
+//   }
+// });
+// const beforeEach = (f: () => void) => f();
+// const afterEach = (f: () => void) => f();
+
+// class Ollama {} // Should be mocked if used
+// class ChatGoogleGenerativeAI {} // Should be mocked if used

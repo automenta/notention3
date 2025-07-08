@@ -1,6 +1,8 @@
-import { Wifi, WifiOff, Users, MessageCircle, Share2, Globe, KeyRound, LogOut, Copy, Hash, Rss, XCircle, Plus } from "lucide-react";
+import { Wifi, WifiOff, Users, MessageCircle, Share2, Globe, KeyRound, LogOut, Copy, Hash, Rss, XCircle, Plus, Eye } from "lucide-react"; // Added Eye
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+// Added Dialog components for viewing full topic note
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "./ui/dialog";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input"; // Added Input
@@ -35,12 +37,86 @@ export function NetworkPanel() {
   } = useAppStore();
 
   const [newTopic, setNewTopic] = useState('');
+  const [selectedTopicNote, setSelectedTopicNote] = useState<NostrEvent | null>(null); // For topic notes
+  const [isViewNoteModalOpen, setIsViewNoteModalOpen] = useState(false); // For topic notes
+  const [selectedMatchedNoteEvent, setSelectedMatchedNoteEvent] = useState<NostrEvent | null>(null); // For matched notes
+  const [isViewMatchedNoteModalOpen, setIsViewMatchedNoteModalOpen] = useState(false); // For matched notes
+  const [dmRecipient, setDmRecipient] = useState<string | null>(null); // For DM modal
+  const [dmContent, setDmContent] = useState<string>("");
+  const [isDmModalOpen, setIsDmModalOpen] = useState(false);
+  const [isFetchingMatchedNote, setIsFetchingMatchedNote] = useState(false);
+
 
   useEffect(() => {
     if (!userProfile?.nostrPubkey && !loading.network) { // Check loading.network to avoid race condition
         initializeNostr();
     }
-  }, [initializeNostr, userProfile?.nostrPubkey, loading.network]);
+    // Attempt to re-subscribe to topics if user logs in or relays change, etc.
+    // This is a basic re-subscribe, might need more robust logic if subs are persisted.
+    if (userProfile?.nostrPubkey && nostrConnected && Object.keys(activeTopicSubscriptions).length > 0) {
+        Object.keys(activeTopicSubscriptions).forEach(topic => {
+            // This logic is a bit simplistic as it doesn't check if subId is still valid
+            // or if it's already subscribed in the current session.
+            // A more robust system would manage subscriptions more carefully on init/login.
+            // For now, this is a placeholder for potential re-subscription needs.
+        });
+    }
+
+  }, [initializeNostr, userProfile?.nostrPubkey, loading.network, nostrConnected, activeTopicSubscriptions]);
+
+  const handleViewTopicNote = (note: NostrEvent) => {
+    setSelectedTopicNote(note);
+    setIsViewNoteModalOpen(true);
+  };
+
+  const handleViewMatchedNote = async (noteId: string, authorPubkey: string) => {
+    if (!noteId) {
+      toast.error("Note ID is missing for the match.");
+      return;
+    }
+    setIsFetchingMatchedNote(true);
+    setSelectedMatchedNoteEvent(null); // Clear previous
+    try {
+      const event = await nostrService.getEventById(noteId, nostrRelays);
+      if (event) {
+        setSelectedMatchedNoteEvent(event);
+        setIsViewMatchedNoteModalOpen(true);
+      } else {
+        toast.error("Could not fetch the matched note from relays.", { description: "It might have been deleted or is not available on your current relays."});
+      }
+    } catch (e: any) {
+      toast.error("Error fetching matched note.", { description: e.message });
+    } finally {
+      setIsFetchingMatchedNote(false);
+    }
+  };
+
+  const handleOpenDmModal = (recipientPubkey: string) => {
+    if (!userProfile?.nostrPubkey) {
+      toast.error("Please connect to Nostr to send DMs.");
+      return;
+    }
+    setDmRecipient(recipientPubkey);
+    setDmContent(""); // Clear previous content
+    setIsDmModalOpen(true);
+  };
+
+  const handleSendDm = async () => {
+    if (!dmRecipient || !dmContent.trim()) {
+      toast.error("Recipient and message content are required.");
+      return;
+    }
+    try {
+      await useAppStore.getState().sendDirectMessage(dmRecipient, dmContent.trim());
+      toast.success("Direct Message sent!");
+      setIsDmModalOpen(false);
+      setDmContent("");
+      setDmRecipient(null);
+    } catch (e: any) {
+      toast.error("Failed to send DM.", { description: e.message });
+    }
+  };
+
 
   const handleToggleConnection = async () => {
     if (nostrConnected && userProfile?.nostrPubkey) {
@@ -52,7 +128,7 @@ export function NetworkPanel() {
       const newPublicKey = await generateAndStoreNostrKeys();
       if (newPublicKey) {
         toast.success("Nostr keys generated and logged in!", {
-          description: "Make sure to backup your private key if prompted (not implemented yet).",
+          // description: "Make sure to backup your private key if prompted (not implemented yet).", // Backup prompt is UI concern
         });
       } else {
         toast.error("Failed to generate Nostr keys.", {
@@ -236,21 +312,37 @@ export function NetworkPanel() {
                         </Badge>
                       </div>
                       {match.sharedTags.length > 0 && (
-                        <div className="mb-2">
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Shared Tags:</p>
+                        <div className="mb-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-0.5">Shared Tags:</p>
                           <div className="flex flex-wrap gap-1">
                             {match.sharedTags.map((tag) => (
-                              <Badge key={tag} variant="secondary" className="text-xs">
+                              <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0.5">
                                 {tag}
                               </Badge>
                             ))}
                           </div>
                         </div>
                       )}
-                      {/* Placeholder for viewing the note - requires fetching the note content via Nostr */}
-                      <Button variant="link" size="sm" className="p-0 h-auto text-xs" disabled>
-                        View Note (Coming Soon)
-                      </Button>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button
+                          variant="link"
+                          size="xs"
+                          className="p-0 h-auto text-xs"
+                          onClick={() => handleViewMatchedNote(match.targetNoteId, match.targetAuthor)}
+                          disabled={isFetchingMatchedNote && selectedMatchedNoteEvent?.id !== match.targetNoteId}
+                        >
+                          {isFetchingMatchedNote && !selectedMatchedNoteEvent && <LoadingSpinner size="xs" className="mr-1" />}
+                          <Eye size={12} className="mr-1" /> View Note
+                        </Button>
+                        <Button
+                          variant="link"
+                          size="xs"
+                          className="p-0 h-auto text-xs text-blue-500 hover:text-blue-600"
+                          onClick={() => handleOpenDmModal(match.targetAuthor)}
+                        >
+                          <MessageCircle size={12} className="mr-1" /> DM Author
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -395,7 +487,14 @@ export function NetworkPanel() {
                           <p className="text-sm whitespace-pre-wrap break-words line-clamp-3">
                             {note.content || <span className="italic">No content</span>}
                           </p>
-                          {/* TODO: Add button to view full note, potentially in a modal or new view */}
+                          <Button
+                            variant="link"
+                            size="xs"
+                            className="p-0 h-auto text-xs mt-1"
+                            onClick={() => handleViewTopicNote(note)}
+                          >
+                            <Eye size={12} className="mr-1" /> View Full Note
+                          </Button>
                         </Card>
                       ))
                     ) : (
@@ -427,6 +526,113 @@ export function NetworkPanel() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Modal to View Full Topic Note */}
+        {selectedTopicNote && (
+          <Dialog open={isViewNoteModalOpen} onOpenChange={setIsViewNoteModalOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Nostr Event Details</DialogTitle>
+                <DialogDescription>
+                  Full content of the note from topic: {Object.entries(activeTopicSubscriptions).find(([, subId]) => subId === (topicNotes[selectedTopicNote.tags.find(t=>t[0]==='t')?.[1] || ''] ? activeTopicSubscriptions[selectedTopicNote.tags.find(t=>t[0]==='t')?.[1] || ''] : ''))?.[0] || 'Unknown Topic'}
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-grow p-1 -mx-1">
+                <div className="text-xs text-muted-foreground mb-2 space-y-0.5">
+                  <p><strong>Author:</strong> {selectedTopicNote.pubkey}</p>
+                  <p><strong>Event ID:</strong> {selectedTopicNote.id}</p>
+                  <p><strong>Timestamp:</strong> {formatDate(selectedTopicNote.created_at)}</p>
+                  <p><strong>Kind:</strong> {selectedTopicNote.kind}</p>
+                  {selectedTopicNote.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                        <strong>Tags:</strong>
+                        {selectedTopicNote.tags.map((tag, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">{tag[0]}: {tag.slice(1).join(', ')}</Badge>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <pre className="text-sm whitespace-pre-wrap break-all bg-muted p-3 rounded-md text-foreground">
+                  {selectedTopicNote.content || <span className="italic">No content</span>}
+                </pre>
+              </ScrollArea>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">Close</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Modal to View Full Matched Note Event */}
+        {selectedMatchedNoteEvent && (
+          <Dialog open={isViewMatchedNoteModalOpen} onOpenChange={setIsViewMatchedNoteModalOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Matched Note Details</DialogTitle>
+                 <DialogDescription>
+                  Full content of the matched Nostr event.
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-grow p-1 -mx-1">
+                <div className="text-xs text-muted-foreground mb-2 space-y-0.5">
+                  <p><strong>Author:</strong> {selectedMatchedNoteEvent.pubkey}</p>
+                  <p><strong>Event ID:</strong> {selectedMatchedNoteEvent.id}</p>
+                  <p><strong>Timestamp:</strong> {formatDate(selectedMatchedNoteEvent.created_at)}</p>
+                  <p><strong>Kind:</strong> {selectedMatchedNoteEvent.kind}</p>
+                  {selectedMatchedNoteEvent.tags.length > 0 && (
+                     <div className="flex flex-wrap gap-1 pt-1">
+                        <strong>Tags:</strong>
+                        {selectedMatchedNoteEvent.tags.map((tag, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">{tag[0]}: {tag.slice(1).join(', ')}</Badge>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <pre className="text-sm whitespace-pre-wrap break-all bg-muted p-3 rounded-md text-foreground">
+                  {selectedMatchedNoteEvent.content || <span className="italic">No content</span>}
+                </pre>
+              </ScrollArea>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">Close</Button>
+                </DialogClose>
+                 <Button type="button" variant="default" onClick={() => handleOpenDmModal(selectedMatchedNoteEvent.pubkey)}>
+                    <MessageCircle size={14} className="mr-2"/> DM Author
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* DM Modal */}
+        {isDmModalOpen && dmRecipient && (
+          <Dialog open={isDmModalOpen} onOpenChange={setIsDmModalOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Send Direct Message</DialogTitle>
+                <DialogDescription>To: {dmRecipient.substring(0,10)}...</DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Input
+                  type="textarea"
+                  value={dmContent}
+                  onChange={(e) => setDmContent(e.target.value)}
+                  placeholder="Your encrypted message..."
+                  className="min-h-[100px]"
+                />
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button onClick={handleSendDm} disabled={!dmContent.trim() || loading.network}>
+                  {loading.network && <LoadingSpinner size="xs" className="mr-2" />} Send Encrypted DM
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
       </div>
     </ScrollArea>
   );

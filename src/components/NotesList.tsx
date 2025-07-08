@@ -9,11 +9,16 @@ import { Note, OntologyNode } from "../../shared/types";
 import { NoteService } from "../services/NoteService";
 import { OntologyService } from "../services/ontology"; // Import OntologyService
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible"; // For collapsible sections
+import { DirectMessage } from "../../shared/types"; // Import DirectMessage type
 
+interface NotesListProps {
+  viewMode: 'notes' | 'chats';
+}
 
-export function NotesList() {
+export function NotesList({ viewMode }: NotesListProps) {
   const { 
     notes: notesMap,
+    directMessages, // Get DMs from store
     currentNoteId, 
     setCurrentNote, 
     deleteNote: storeDeleteNote,
@@ -21,63 +26,101 @@ export function NotesList() {
     setSearchQuery: setGlobalSearchQuery,
     ontology,
     searchFilters,
-    setSearchFilters: setStoreSearchFilters // Get setSearchFilters from store
+    setSearchFilters: setStoreSearchFilters,
+    userProfile, // For identifying self in DMs
+    setSidebarTab, // For navigating to DM panel
   } = useAppStore();
 
-  const [displayedNotes, setDisplayedNotes] = useState<Note[]>([]);
+  const [displayedItems, setDisplayedItems] = useState<(Note | DirectMessage)[]>([]); // Can be Note or DM
   const [isLoading, setIsLoading] = useState(false);
-  const [localSearchTerm, setLocalSearchTerm] = useState(globalSearchQuery);
+  const [localSearchTerm, setLocalSearchTerm] = useState(globalSearchQuery); // Input field's immediate value
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(globalSearchQuery); // Debounced value for triggering search
   const [expandedOntologyNodes, setExpandedOntologyNodes] = useState<Set<string>>(new Set());
 
   const allNotes = useMemo(() => Object.values(notesMap), [notesMap]);
 
   useEffect(() => {
-    // Sync local search term if global one changes (e.g. from clearing it)
+    // Sync local search term if global one changes
     setLocalSearchTerm(globalSearchQuery);
+    setDebouncedSearchTerm(globalSearchQuery); // Also update debounced term immediately
   }, [globalSearchQuery]);
 
-  // Main search and filtering logic
+  // Debounce effect for localSearchTerm
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(localSearchTerm);
+    }, 300); // 300ms debounce delay
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [localSearchTerm]);
+
+  // Main search and filtering logic - now uses debouncedSearchTerm
   useEffect(() => {
     const performSearchAndFilter = async () => {
       setIsLoading(true);
-      
-      let notesToFilter = [...allNotes]; // Create a mutable copy
-
-      // If specific tags are selected via ontology filter, apply this first
-      // This logic ensures that notes must contain AT LEAST ONE of the semantically matched tags.
-      if (searchFilters.tags && searchFilters.tags.length > 0) {
-        const lowercasedFilterTags = searchFilters.tags.map(t => t.toLowerCase());
-        notesToFilter = notesToFilter.filter(note =>
-          note.tags.some(noteTag => lowercasedFilterTags.includes(noteTag.toLowerCase()))
+      if (viewMode === 'notes') {
+        const results = await NoteService.semanticSearch(
+          localSearchTerm,
+          ontology,
+          searchFilters,
+          allNotes
         );
+        const sortedNotes = results.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+        setDisplayedItems(sortedNotes);
+      } else if (viewMode === 'chats') {
+        // Filter DMs based on localSearchTerm (e.g., search content or participant pubkey)
+        const lowerSearch = localSearchTerm.toLowerCase();
+        const filteredDms = directMessages.filter(dm =>
+          dm.content.toLowerCase().includes(lowerSearch) ||
+          dm.from.toLowerCase().includes(lowerSearch) ||
+          dm.to.toLowerCase().includes(lowerSearch)
+        ).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()); // Newest first
+
+        // Group DMs by participant (simple grouping for now)
+        const threads: { [pubkey: string]: DirectMessage[] } = {};
+        filteredDms.forEach(dm => {
+          const otherParty = dm.from === userProfile?.nostrPubkey ? dm.to : dm.from;
+          if (!threads[otherParty]) threads[otherParty] = [];
+          threads[otherParty].push(dm);
+        });
+
+        // Create summary items for display (latest message from each thread)
+        const summaryItems = Object.entries(threads).map(([pubkey, msgs]) => {
+          return msgs[0]; // The first message after sorting by time (newest)
+        }).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        setDisplayedItems(summaryItems);
       }
-
-      // Then, if there's a text search query, apply semantic search on the (potentially pre-filtered by ontology tags) notes
-      const searchResults = await NoteService.semanticSearch(localSearchTerm, ontology, notesToFilter);
-
-      // Apply other non-tag, non-text filters (status, etc.)
-      const fullyFilteredResults = searchResults.filter(note => {
-        if (searchFilters.status && note.status !== searchFilters.status) {
-          return false;
-        }
-        // Folder and DateRange filters would go here
-        return true;
-      }).sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      });
-
-      setDisplayedNotes(fullyFilteredResults);
       setIsLoading(false);
     };
 
     performSearchAndFilter();
-  }, [localSearchTerm, ontology, allNotes, searchFilters]);
+  }, [viewMode, debouncedSearchTerm, ontology, allNotes, searchFilters, directMessages, userProfile?.nostrPubkey]);
 
 
-  const handleNoteClick = (noteId: string) => {
-    setCurrentNote(noteId);
+  const handleItemClick = (item: Note | DirectMessage) => {
+    if (viewMode === 'notes') {
+      setCurrentNote((item as Note).id);
+    } else if (viewMode === 'chats') {
+      // For chats, clicking a DM summary could navigate to a dedicated DM panel or view
+      // For now, let's just log it, or set a state to open a DM panel later
+      const dm = item as DirectMessage;
+      const otherParty = dm.from === userProfile?.nostrPubkey ? dm.to : dm.from;
+      console.log("Clicked DM thread with:", otherParty);
+      // Example: useAppStore.setState({ currentDmChatPubkey: otherParty, sidebarTab: 'network' }); // to open DM panel
+      // Or, if DirectMessagesPanel is part of NotesList/Sidebar structure:
+      // useAppStore.getState().openDirectMessagePanel(otherParty);
+      toast.info(`Opening chat with ${otherParty.substring(0,10)}... (UI Placeholder)`);
+      // For now, let's switch to the Network tab as a placeholder for where DMs are also handled.
+      // A proper DM view would be better.
+      // setSidebarTab('network');
+    }
   };
 
   const handleDeleteNote = async (noteId: string, event: React.MouseEvent) => {
@@ -86,6 +129,7 @@ export function NotesList() {
       await storeDeleteNote(noteId);
     }
   };
+  // No delete for DMs from this list for now.
 
   const handleSearchInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setLocalSearchTerm(event.target.value);
@@ -248,83 +292,105 @@ export function NotesList() {
         <div className="p-2">
           {isLoading ? (
             <div className="text-center text-muted-foreground py-8">Loading...</div>
-          ) : displayedNotes.length === 0 ? (
+          ) : displayedItems.length === 0 ? (
             <div className="text-center text-muted-foreground py-8 px-4">
-              {localSearchTerm || (searchFilters.tags && searchFilters.tags.length > 0) ? (
-                <>
-                  <p className="text-sm">No notes found matching your criteria.</p>
-                  <p className="text-xs mt-1">Try adjusting your search or filters.</p>
-                </>
+              {localSearchTerm || (searchFilters.tags && searchFilters.tags.length > 0 && viewMode === 'notes') ? (
+                <p className="text-sm">No {viewMode === 'notes' ? 'notes' : 'chats'} found matching your criteria.</p>
               ) : (
                 <>
                   <FileText size={36} className="mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">No notes yet.</p>
-                  <p className="text-xs mt-1">Create your first note to get started!</p>
+                  <p className="text-sm">No {viewMode === 'notes' ? 'notes' : 'chats'} yet.</p>
+                  {viewMode === 'notes' && <p className="text-xs mt-1">Create your first note to get started!</p>}
+                  {viewMode === 'chats' && <p className="text-xs mt-1">Direct messages will appear here.</p>}
                 </>
               )}
             </div>
           ) : (
             <div className="space-y-1">
-              {displayedNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className={`p-2.5 rounded-md border cursor-pointer transition-colors group hover:bg-accent ${
-                    currentNoteId === note.id ? 'bg-accent border-primary shadow-sm' : 'border-transparent hover:border-accent-foreground/10'
-                  }`}
-                  onClick={() => handleNoteClick(note.id)}
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex items-center gap-2 flex-1 min-w-0"> {/* Wrapper for title and badge */}
-                      <h3 className="font-semibold text-sm truncate group-hover:text-accent-foreground">
-                        {note.title || 'Untitled Note'}
-                      </h3>
-                      {note.isSharedPublicly && (
-                        <Badge variant="outline" className="px-1.5 py-0 text-xs h-5 border-green-500 text-green-600 dark:text-green-400">
-                          {/* Optional: <Globe size={10} className="mr-1" /> */}
-                          Public
-                        </Badge>
+              {displayedItems.map((item) => {
+                if (viewMode === 'notes') {
+                  const note = item as Note;
+                  return (
+                    <div
+                      key={note.id}
+                      className={`p-2.5 rounded-md border cursor-pointer transition-colors group hover:bg-accent ${
+                        currentNoteId === note.id ? 'bg-accent border-primary shadow-sm' : 'border-transparent hover:border-accent-foreground/10'
+                      }`}
+                      onClick={() => handleItemClick(note)}
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm truncate group-hover:text-accent-foreground">
+                            {note.title || 'Untitled Note'}
+                          </h3>
+                          {note.isSharedPublicly && (
+                            <Badge variant="outline" className="px-1.5 py-0 text-xs h-5 border-green-500 text-green-600 dark:text-green-400">
+                              Public
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {note.pinned && <Pin size={12} className="text-primary" />}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => handleDeleteNote(note.id, e)}
+                            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-60 focus:opacity-60 text-muted-foreground hover:text-destructive hover:opacity-100"
+                            aria-label="Delete note"
+                          >
+                            <Trash2 size={13} />
+                          </Button>
+                        </div>
+                      </div>
+                      {note.content && (
+                        <p className="text-xs text-muted-foreground group-hover:text-accent-foreground/80 mb-1.5 line-clamp-1">
+                          {getPreview(note.content)}
+                        </p>
                       )}
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {note.pinned && <Pin size={12} className="text-primary" />}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => handleDeleteNote(note.id, e)}
-                        className="h-5 w-5 p-0 opacity-0 group-hover:opacity-60 focus:opacity-60 text-muted-foreground hover:text-destructive hover:opacity-100"
-                        aria-label="Delete note"
-                      >
-                        <Trash2 size={13} />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {note.content && (
-                    <p className="text-xs text-muted-foreground group-hover:text-accent-foreground/80 mb-1.5 line-clamp-1">
-                      {getPreview(note.content)}
-                    </p>
-                  )}
-
-                  {note.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {note.tags.slice(0, 3).map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0.5 font-normal">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {note.tags.length > 3 && (
-                        <Badge variant="secondary" className="text-xs px-1.5 py-0.5 font-normal">
-                          +{note.tags.length - 3}
-                        </Badge>
+                      {note.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1.5">
+                          {note.tags.slice(0, 3).map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0.5 font-normal">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {note.tags.length > 3 && (
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0.5 font-normal">
+                              +{note.tags.length - 3}
+                            </Badge>
+                          )}
+                        </div>
                       )}
+                      <div className="text-xs text-muted-foreground group-hover:text-accent-foreground/70">
+                        {formatDate(note.updatedAt)}
+                      </div>
                     </div>
-                  )}
-
-                  <div className="text-xs text-muted-foreground group-hover:text-accent-foreground/70">
-                    {formatDate(note.updatedAt)}
-                  </div>
-                </div>
-              ))}
+                  );
+                } else if (viewMode === 'chats') {
+                  const dm = item as DirectMessage;
+                  const otherPartyPubkey = dm.from === userProfile?.nostrPubkey ? dm.to : dm.from;
+                  const isOwnMessage = dm.from === userProfile?.nostrPubkey;
+                  return (
+                    <div
+                      key={dm.id}
+                      className={`p-2.5 rounded-md border cursor-pointer transition-colors group hover:bg-accent border-transparent hover:border-accent-foreground/10`}
+                      onClick={() => handleItemClick(dm)}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-semibold text-sm truncate group-hover:text-accent-foreground">
+                          Chat with: {otherPartyPubkey.substring(0,10)}...
+                        </h3>
+                        <span className="text-xs text-muted-foreground">{formatDate(dm.timestamp)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground group-hover:text-accent-foreground/80 line-clamp-2">
+                        {isOwnMessage && <span className="font-medium">You: </span>}
+                        {dm.content}
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              })}
             </div>
           )}
         </div>

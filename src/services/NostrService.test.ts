@@ -4,32 +4,35 @@ import { generatePrivateKey, getPublicKey, nip04, SimplePool } from 'nostr-tools
 import { Note } from '../../shared/types';
 
 // Mocks
-jest.mock('./db'); // Mock DBService
+vi.mock('./db'); // Mock DBService
 
 // Mock nostr-tools functions used by NostrService if they are not part of the test's focus
 // For SimplePool, we'll mock its methods.
 const mockPublishResult = Promise.resolve(); // Simulate successful publish
 const mockSubInstance = {
-  on: jest.fn(),
-  unsub: jest.fn(),
+  on: vi.fn(),
+  unsub: vi.fn(),
 };
 const mockPool = {
-  publish: jest.fn().mockReturnValue([mockPublishResult]), // publish returns an array of promises
-  sub: jest.fn().mockReturnValue(mockSubInstance),
-  close: jest.fn(),
+  publish: vi.fn().mockReturnValue([mockPublishResult]), // publish returns an array of promises
+  sub: vi.fn().mockReturnValue(mockSubInstance),
+  close: vi.fn(),
 };
-jest.mock('nostr-tools', () => ({
-  ...jest.requireActual('nostr-tools'), // Import and retain default behavior
-  generatePrivateKey: jest.fn(() => 'mockPrivateKey'),
-  getPublicKey: jest.fn(sk => `mockPublicKey_for_${sk}`),
-  nip04: {
-    encrypt: jest.fn(async (privkey, pubkey, text) => `encrypted_${text}_by_${privkey}_for_${pubkey}`),
-    decrypt: jest.fn(async (privkey, pubkey, payload) => payload.replace(`encrypted_`, '').replace(`_by_${privkey}_for_${pubkey}`, '')),
-  },
-  SimplePool: jest.fn(() => mockPool),
-  getEventHash: jest.fn((event) => `hash_${JSON.stringify(event.created_at)}`),
-  signEvent: jest.fn((event, sk) => `signed_${event.id}_by_${sk}`),
-}));
+vi.mock('nostr-tools', async () => {
+  const actual = await vi.importActual('nostr-tools') as any;
+  return {
+    ...actual,
+    generatePrivateKey: vi.fn(() => 'mockPrivateKey'),
+    getPublicKey: vi.fn(sk => `mockPublicKey_for_${sk}`),
+    nip04: {
+      encrypt: vi.fn(async (privkey, pubkey, text) => `encrypted_${text}_by_${privkey}_for_${pubkey}`),
+      decrypt: vi.fn(async (privkey, pubkey, payload) => payload.replace(`encrypted_`, '').replace(`_by_${privkey}_for_${pubkey}`, '')),
+    },
+    SimplePool: vi.fn(() => mockPool),
+    getEventHash: vi.fn((event) => `hash_${JSON.stringify(event.created_at)}`),
+    signEvent: vi.fn((event, sk) => `signed_${event.id}_by_${sk}`),
+  };
+});
 
 
 describe('NostrService', () => {
@@ -37,7 +40,7 @@ describe('NostrService', () => {
 
   beforeEach(() => {
     // Reset mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Re-initialize the singleton or get a fresh instance for testing if possible.
     // For this structure, we'll use the exported singleton and manage its state.
@@ -48,8 +51,13 @@ describe('NostrService', () => {
     (serviceInstance as any).privateKey = null;
     (serviceInstance as any).publicKey = null;
     // Mock that DBService returns null initially for keys
-    (DBService.getNostrPrivateKey as jest.Mock).mockResolvedValue(null);
-    (DBService.getNostrPublicKey as jest.Mock).mockResolvedValue(null);
+    // Ensure DBService methods are mock functions. If vi.mock('./db') is effective, they should be.
+    if (typeof (DBService.getNostrPrivateKey as any).mockResolvedValue === 'function') {
+      (DBService.getNostrPrivateKey as any).mockResolvedValue(null);
+    }
+    if (typeof (DBService.getNostrPublicKey as any).mockResolvedValue === 'function') {
+      (DBService.getNostrPublicKey as any).mockResolvedValue(null);
+    }
   });
 
   describe('Key Management', () => {
@@ -72,8 +80,13 @@ describe('NostrService', () => {
     });
 
     it('should load a key pair from DBService', async () => {
-      (DBService.getNostrPrivateKey as jest.Mock).mockResolvedValue('loadedPrivKey');
-      (DBService.getNostrPublicKey as jest.Mock).mockResolvedValue('loadedPubKey');
+      // Ensure DBService methods are mock functions before calling mockResolvedValue
+      if (typeof (DBService.getNostrPrivateKey as any).mockResolvedValue === 'function') {
+        (DBService.getNostrPrivateKey as any).mockResolvedValue('loadedPrivKey');
+      }
+      if (typeof (DBService.getNostrPublicKey as any).mockResolvedValue === 'function') {
+        (DBService.getNostrPublicKey as any).mockResolvedValue('loadedPubKey');
+      }
 
       const loaded = await serviceInstance.loadKeyPair();
       expect(loaded).toBe(true);
@@ -191,7 +204,7 @@ describe('NostrService', () => {
 
   describe('Event Subscription', () => {
     const mockFilters = [{ kinds: [1] }];
-    const onEventCallback = jest.fn();
+    const onEventCallback = vi.fn();
 
     beforeEach(async () => {
       await serviceInstance.storeKeyPair('mySk', 'myPk');

@@ -338,6 +338,220 @@ export class NostrService {
       throw new Error('Failed to decrypt message.');
     }
   }
+
+  // --- Sync Specific Methods ---
+
+  /**
+   * Publishes a note for backup/sync purposes, typically encrypted to self.
+   * @param note The note object to sync.
+   * @param targetRelays Optional relays, defaults to user's configured relays.
+   * @returns Promise resolving with event IDs from relays.
+   */
+  public async publishNoteForSync(note: Note, targetRelays?: string[]): Promise<string[]> {
+    if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
+      throw new Error('User not logged in. Cannot publish note for sync.');
+    }
+
+    const noteJson = JSON.stringify(note);
+    const encryptedContent = await nip04.encrypt(this.privateKey, this.publicKey, noteJson);
+
+    const unsignedEvent: UnsignedEvent = {
+      kind: 4, // Encrypted Direct Message (to self)
+      pubkey: this.publicKey,
+      created_at: Math.floor((note.updatedAt || new Date()).getTime() / 1000), // Use note's updatedAt for event's created_at
+      tags: [
+        ['p', this.publicKey], // Encrypted to self
+        ['d', `notention-note-sync:${note.id}`], // Special d tag for sync
+        // Potentially add original note.id as another tag if 'd' is purely for event replacement: ['note_id', note.id]
+      ],
+      content: encryptedContent,
+    };
+
+    const eventId = getEventHash(unsignedEvent);
+    const signature = signEvent(unsignedEvent, this.privateKey);
+    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+
+    const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToPublish.length === 0) {
+      console.warn('No relays configured or provided to publish note for sync.');
+      return [];
+    }
+
+    console.log(`Publishing note for sync to ${relaysToPublish.join(', ')}:`, signedEvent);
+    try {
+      const publicationPromises = this.pool.publish(relaysToPublish, signedEvent);
+      const results = await Promise.allSettled(publicationPromises);
+      const successfulEventIds: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          console.log(`Sync Event ${signedEvent.id} published successfully to ${relaysToPublish[index]}`);
+          successfulEventIds.push(signedEvent.id);
+        } else {
+          console.error(`Failed to publish sync event ${signedEvent.id} to ${relaysToPublish[index]}:`, result.reason);
+        }
+      });
+      return successfulEventIds;
+    } catch (error) {
+      console.error('Error during sync note pool.publish:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetches synced notes (Kind 4 events with specific 'd' tag) from relays.
+   * @param since Optional timestamp to fetch events after.
+   * @param targetRelays Optional relays.
+   * @returns Promise resolving with an array of decrypted Note objects.
+   */
+  public async fetchSyncedNotes(since?: number, targetRelays?: string[]): Promise<Note[]> {
+    if (!this.isLoggedIn() || !this.publicKey) {
+      throw new Error('User not logged in. Cannot fetch synced notes.');
+    }
+
+    const relaysToUse = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToUse.length === 0) return [];
+
+    const filters: Filter[] = [{
+      kinds: [4],
+      authors: [this.publicKey],
+      '#p': [this.publicKey], // Sent to self
+      // Using a prefix match for 'd' tag might require relay support or fetching all and filtering client-side.
+      // For simplicity, let's fetch all kind 4 to self and filter by 'd' tag content client-side.
+      // Or, if relays support prefix for 'd' tag, use it. nostr-tools might not directly support prefix in Filter.
+      // Let's assume we fetch broadly and filter.
+      ...(since ? { since } : {})
+    }];
+
+    const events = await this.pool.list(relaysToUse, filters);
+    const syncedNotes: Note[] = [];
+
+    for (const event of events) {
+      if (event.tags.some(tag => tag[0] === 'd' && tag[1]?.startsWith('notention-note-sync:'))) {
+        try {
+          const decryptedContent = await this.decryptMessage(event.content, event.pubkey);
+          const note = JSON.parse(decryptedContent) as Note;
+          // Ensure dates are Date objects
+          if (note.createdAt && typeof note.createdAt === 'string') note.createdAt = new Date(note.createdAt);
+          if (note.updatedAt && typeof note.updatedAt === 'string') note.updatedAt = new Date(note.updatedAt);
+          syncedNotes.push(note);
+        } catch (error) {
+          console.error('Error decrypting or parsing synced note:', error, event);
+        }
+      }
+    }
+    return syncedNotes;
+  }
+
+  /**
+   * Publishes the ontology for sync/backup. Uses Kind 30001 (replaceable event).
+   * @param ontology The ontology tree to sync.
+   * @param targetRelays Optional relays.
+   * @returns Promise resolving with event IDs.
+   */
+  public async publishOntologyForSync(ontology: any, targetRelays?: string[]): Promise<string[]> { // ontology is OntologyTree
+    if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
+      throw new Error('User not logged in. Cannot publish ontology for sync.');
+    }
+
+    const ontologyJson = JSON.stringify(ontology);
+    // Content for Kind 30001 is not typically encrypted by default unless app chooses to.
+    // For simplicity, store as plaintext here. If encryption needed, it would wrap ontologyJson.
+
+    const unsignedEvent: UnsignedEvent = {
+      kind: 30001, // Replaceable event for user-specific data
+      pubkey: this.publicKey,
+      created_at: Math.floor((ontology.updatedAt || new Date()).getTime() / 1000), // Use ontology's updatedAt
+      tags: [
+        ['d', 'notention-ontology-sync'] // Specific d tag for this app's ontology
+      ],
+      content: ontologyJson,
+    };
+
+    const eventId = getEventHash(unsignedEvent);
+    const signature = signEvent(unsignedEvent, this.privateKey);
+    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+
+    const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToPublish.length === 0) {
+      console.warn('No relays for ontology sync.');
+      return [];
+    }
+
+    console.log(`Publishing ontology for sync to ${relaysToPublish.join(', ')}:`, signedEvent);
+    try {
+      const pubPromises = this.pool.publish(relaysToPublish, signedEvent);
+      const results = await Promise.allSettled(pubPromises);
+      // Similar success/error handling as publishNoteForSync
+      return results.filter(r => r.status === 'fulfilled').map(() => signedEvent.id);
+    } catch (error) {
+        console.error('Error during ontology sync pool.publish:', error);
+        return [];
+    }
+  }
+
+  /**
+   * Fetches the latest synced ontology (Kind 30001 event) from relays.
+   * @param targetRelays Optional relays.
+   * @returns Promise resolving with the OntologyTree or null if not found/error.
+   */
+  public async fetchSyncedOntology(targetRelays?: string[]): Promise<any | null> { // Returns OntologyTree
+    if (!this.isLoggedIn() || !this.publicKey) {
+      throw new Error('User not logged in. Cannot fetch synced ontology.');
+    }
+
+    const relaysToUse = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToUse.length === 0) return null;
+
+    const filters: Filter[] = [{
+      kinds: [30001],
+      authors: [this.publicKey],
+      '#d': ['notention-ontology-sync'], // Exact match for 'd' tag
+      limit: 1 // We only need the latest one
+    }];
+
+    // .list() should return the most recent event first for replaceable kinds if relays behave.
+    const events = await this.pool.list(relaysToUse, filters);
+    if (events.length === 0) return null;
+
+    // Sort by created_at descending to be sure we get the latest, as pool.list might return from multiple relays.
+    events.sort((a, b) => b.created_at - a.created_at);
+
+    const latestEvent = events[0];
+    try {
+      const ontology = JSON.parse(latestEvent.content); // as OntologyTree
+      // Ensure dates are Date objects
+      if (ontology.updatedAt && typeof ontology.updatedAt === 'string') {
+        ontology.updatedAt = new Date(ontology.updatedAt);
+      }
+      return ontology;
+    } catch (error) {
+      console.error('Error parsing synced ontology:', error, latestEvent);
+      return null;
+    }
+  }
+
+  /**
+   * Fetches a single event by its ID from specified relays.
+   * @param eventId The ID of the event to fetch.
+   * @param targetRelays Optional array of relay URLs. Defaults to pre-configured relays.
+   * @returns A promise that resolves with the Event or null if not found.
+   */
+  public async getEventById(eventId: string, targetRelays?: string[]): Promise<Event | null> {
+    const relaysToUse = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToUse.length === 0) {
+      console.warn('No relays to fetch event from.');
+      return null;
+    }
+    // SimplePool's get method fetches from one relay at a time until found or all fail.
+    // It takes a filter, so we filter by id.
+    try {
+      const event = await this.pool.get(relaysToUse, { ids: [eventId] });
+      return event; // Returns the first event found or null
+    } catch (error) {
+      console.error(`Error fetching event ${eventId}:`, error);
+      return null;
+    }
+  }
 }
 
 // Export a singleton instance

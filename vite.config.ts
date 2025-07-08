@@ -39,19 +39,66 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'vite.svg',
+      src: 'pwa-192x192.png', // Assumed to exist in public/
             sizes: '192x192',
-            type: 'image/svg+xml'
+      type: 'image/png'
           },
           {
-            src: 'vite.svg',
+      src: 'pwa-512x512.png', // Assumed to exist in public/
             sizes: '512x512',
-            type: 'image/svg+xml'
+      type: 'image/png'
+    },
+    {
+      src: 'pwa-maskable-512x512.png', // Assumed to exist in public/ for maskable icon
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable'
           }
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        runtimeCaching: [
+          {
+            // Cache Nostr relay communications (WebSocket connections cannot be cached directly by SW,
+            // but any HTTP/HTTPS fallbacks or API endpoints related to Nostr could be.
+            // For actual WebSocket data, offline handling needs to be in app logic.
+            // This entry is a placeholder in case any part of Nostr interaction uses HTTP.
+            urlPattern: /^https:\/\/relay\.damus\.io\//, // Example, adjust to actual relay URLs or a more generic pattern
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'nostr-cache',
+              networkTimeoutSeconds: 10,
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 24 * 60 * 60, // 1 day
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            // Example for caching other API calls if any (e.g., if AI services were cloud-based)
+            urlPattern: /^https:\/\/api\.example\.com\//,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'api-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 6 * 60 * 60, // 6 hours
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          // Add more runtime caching rules as needed
+        ],
+        navigateFallback: '/index.html', // Good for SPAs
+        cleanupOutdatedCaches: true, // Recommended
+        // Background sync for HTTP POST/PUT requests can be configured here if needed
+        // For WebSocket (Nostr), app-level queuing is required.
       }
     })
   ],

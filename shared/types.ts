@@ -26,6 +26,7 @@ export interface OntologyNode {
 export interface OntologyTree {
   nodes: { [id: string]: OntologyNode };
   rootIds: string[];
+  updatedAt?: Date; // Added for sync purposes
 }
 
 export interface UserProfile {

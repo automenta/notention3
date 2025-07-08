@@ -1,4 +1,4 @@
-import { FileText, Share2, Settings, Hash, Plus } from "lucide-react";
+import { FileText, Share2, Settings, Hash, MessageSquare, Plus } from "lucide-react"; // Added MessageSquare
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -9,7 +9,15 @@ import { NetworkPanel } from "./NetworkPanel";
 import { SettingsPanel } from "./SettingsPanel";
 
 export function Sidebar() {
-  const { sidebarTab, setSidebarTab, createNote, searchQuery, searchNotes } = useAppStore();
+  const { sidebarTab, setSidebarTab, createNote, searchQuery, setSearchQuery } = useAppStore(
+    (state) => ({
+      sidebarTab: state.sidebarTab,
+      setSidebarTab: state.setSidebarTab,
+      createNote: state.createNote,
+      searchQuery: state.searchQuery,
+      setSearchQuery: state.setSearchQuery, // Correctly get setSearchQuery
+    })
+  );
 
   const handleNewNote = async () => {
     await createNote();
@@ -33,17 +41,21 @@ export function Sidebar() {
         <Input
           placeholder="Search notes..."
           value={searchQuery}
-          onChange={(e) => searchNotes(e.target.value)}
+          onChange={(e) => setSearchQuery(e.target.value)} // Corrected to use setSearchQuery
           className="bg-sidebar-accent border-sidebar-border"
         />
       </div>
 
       {/* Tabs */}
-      <Tabs value={sidebarTab} onValueChange={(value) => setSidebarTab(value as any)} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-4 bg-sidebar-accent m-2">
+      <Tabs value={sidebarTab} onValueChange={(value) => setSidebarTab(value as 'notes' | 'ontology' | 'network' | 'settings' | 'chats')} className="flex-1 flex flex-col">
+        <TabsList className="grid w-full grid-cols-5 bg-sidebar-accent m-2"> {/* Changed to grid-cols-5 */}
           <TabsTrigger value="notes" className="flex items-center gap-1">
             <FileText size={14} />
             <span className="hidden sm:inline">Notes</span>
+          </TabsTrigger>
+          <TabsTrigger value="chats" className="flex items-center gap-1"> {/* Added Chats Tab */}
+            <MessageSquare size={14} />
+            <span className="hidden sm:inline">Chats</span>
           </TabsTrigger>
           <TabsTrigger value="ontology" className="flex items-center gap-1">
             <Hash size={14} />
@@ -61,9 +73,11 @@ export function Sidebar() {
 
         <div className="flex-1 overflow-hidden">
           <TabsContent value="notes" className="h-full m-0">
-            <NotesList />
+            <NotesList viewMode="notes" /> {/* Pass viewMode */}
           </TabsContent>
-          
+          <TabsContent value="chats" className="h-full m-0"> {/* Added Chats Tab Content */}
+            <NotesList viewMode="chats" /> {/* Pass viewMode, NotesList will adapt */}
+          </TabsContent>
           <TabsContent value="ontology" className="h-full m-0">
             <OntologyEditor />
           </TabsContent>

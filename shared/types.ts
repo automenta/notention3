@@ -12,6 +12,7 @@ export interface Note {
   folderId?: string;
   pinned?: boolean;
   archived?: boolean;
+  isSharedPublicly?: boolean; // Indicates if the note has been published publicly to Nostr
 }
 
 export interface OntologyNode {
@@ -36,6 +37,13 @@ export interface UserProfile {
     theme: "light" | "dark" | "system";
     aiEnabled: boolean;
     defaultNoteStatus: "draft" | "published";
+  };
+  nostrRelays?: string[]; // User's preferred relays
+  privacySettings?: {
+    sharePublicNotesGlobally: boolean; // A master switch for all public sharing
+    shareTagsWithPublicNotes: boolean;
+    shareValuesWithPublicNotes: boolean;
+    // More granular settings could be added, e.g., per note or per contact
   };
 }
 

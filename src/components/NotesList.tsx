@@ -274,10 +274,18 @@ export function NotesList() {
                   onClick={() => handleNoteClick(note.id)}
                 >
                   <div className="flex items-start justify-between mb-1">
-                    <h3 className="font-semibold text-sm truncate flex-1 pr-2 group-hover:text-accent-foreground">
-                      {note.title || 'Untitled Note'}
-                    </h3>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 flex-1 min-w-0"> {/* Wrapper for title and badge */}
+                      <h3 className="font-semibold text-sm truncate group-hover:text-accent-foreground">
+                        {note.title || 'Untitled Note'}
+                      </h3>
+                      {note.isSharedPublicly && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-xs h-5 border-green-500 text-green-600 dark:text-green-400">
+                          {/* Optional: <Globe size={10} className="mr-1" /> */}
+                          Public
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       {note.pinned && <Pin size={12} className="text-primary" />}
                       <Button
                         variant="ghost"

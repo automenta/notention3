@@ -5,6 +5,7 @@ import Link from "@tiptap/extension-link";
 import Mention, { MentionOptions, MentionPluginKey } from "@tiptap/extension-mention";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
+import DOMPurify from 'dompurify';
 import { Button } from "./ui/button";
 // @ts-ignore
 import { tippy } from 'tippy.js';

@@ -171,6 +171,91 @@ export function SettingsPanel() {
           </CardContent>
         </Card>
 
+        {/* Privacy Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <User size={16} /> {/* Replace with a better icon e.g. ShieldCheck */}
+              Privacy Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="sharePublicNotesGlobally" className="text-sm">Share Notes Publicly</Label>
+                <p className="text-xs text-muted-foreground">
+                  Allow publishing non-encrypted notes to the Nostr network.
+                </p>
+              </div>
+              <Switch
+                id="sharePublicNotesGlobally"
+                checked={userProfile?.privacySettings?.sharePublicNotesGlobally || false}
+                onCheckedChange={(checked) => {
+                  if (userProfile) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...(userProfile.privacySettings || { shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }), // keep other settings if they exist
+                        sharePublicNotesGlobally: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareTagsWithPublicNotes" className="text-sm">Share Tags with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include tags when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareTagsWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareTagsWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareTagsWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareValuesWithPublicNotes" className="text-sm">Share Values with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include key-value pairs when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareValuesWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareValuesWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    updateUserProfile({
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareValuesWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Appearance */}
         <Card>
           <CardHeader>

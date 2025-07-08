@@ -127,6 +127,31 @@ export class DBService {
     return await userStore.getItem('profile');
   }
 
+  // Nostr keys operations (scoped to userStore)
+  static async saveNostrPrivateKey(sk: string): Promise<void> {
+    await userStore.setItem('nostrPrivateKey', sk);
+  }
+
+  static async getNostrPrivateKey(): Promise<string | null> {
+    return await userStore.getItem('nostrPrivateKey');
+  }
+
+  static async removeNostrPrivateKey(): Promise<void> {
+    await userStore.removeItem('nostrPrivateKey');
+  }
+
+  static async saveNostrPublicKey(pk: string): Promise<void> {
+    await userStore.setItem('nostrPublicKey', pk);
+  }
+
+  static async getNostrPublicKey(): Promise<string | null> {
+    return await userStore.getItem('nostrPublicKey');
+  }
+
+  static async removeNostrPublicKey(): Promise<void> {
+    await userStore.removeItem('nostrPublicKey');
+  }
+
   // Folders operations
   static async saveFolder(folder: Folder): Promise<void> {
     await foldersStore.setItem(folder.id, folder);

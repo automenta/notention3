@@ -207,14 +207,10 @@ describe('NoteEditor', () => {
     // For example, if fields are rendered as <Label>Key</Label><Input value={value} ... />
     // Or if they are grouped and can be found by the key text.
 
-    // Let's assume the input field for "Attendees" can be found by its current value or a test-id if added.
-    // For this example, we'll try to find it by its value if possible, or label.
-    // A more robust way would be to add test-ids to these dynamic fields.
-    // const attendeesInput = await screen.findByDisplayValue('Bob, Alice');
-    // Or by label if the label is "Attendees"
-    // Use findByDisplayValue as it's more robust for inputs if their value is known
-    const attendeesInput = await screen.findByDisplayValue('Bob, Alice');
+    // Use the new data-testid
+    const attendeesInput = await screen.findByTestId('field-input-Attendees');
     expect(attendeesInput).toBeInTheDocument();
+    expect(attendeesInput).toHaveValue('Bob, Alice');
 
 
     fireEvent.change(attendeesInput, { target: { value: 'Bob, Alice, Charlie' } });
@@ -445,6 +441,75 @@ describe('NoteEditor', () => {
     });
     expect(await screen.findByText('AI Generated Summary')).toBeInTheDocument();
     expect(screen.getByText('This is an AI summary.')).toBeInTheDocument();
+
+    // Test inserting the summary
+    const insertButton = screen.getByRole('button', { name: /Insert into Note/i });
+    fireEvent.click(insertButton);
+
+    const { useEditor } = vi.mocked(require('@tiptap/react'));
+    const mockEditor = vi.mocked(useEditor()!); // Get the mocked editor instance
+
+    expect(mockEditor.commands.setContent).toHaveBeenCalledWith(
+      expect.stringContaining('AI Summary:') && expect.stringContaining('This is an AI summary.'),
+      true
+    );
+    expect(toast.info).toHaveBeenCalledWith("Summary inserted into note.");
+    // Check if handleSave was called
+    await waitFor(() => {
+        expect(mockUpdateNote).toHaveBeenCalledWith(mockNote.id, expect.objectContaining({
+            // content will be the new content set by setContent, title the original
+        }));
+    });
+  });
+
+  it('removes a tag via the metadata sidebar', async () => {
+    setupStore({ tags: ['#Tag1', '#TagToRemove'] });
+    render(<NoteEditor />);
+    const infoButton = screen.getByRole('button', { name: /Info/i });
+    fireEvent.click(infoButton);
+
+    // Find the badge for '#TagToRemove'
+    const tagBadge = await screen.findByText('#TagToRemove');
+    // The 'x' is part of the badge content or a sibling, depends on implementation.
+    // Assuming clicking the badge itself (if it has an onClick for removal) or a specific 'x' button.
+    // Current implementation has onClick on the Badge itself.
+    fireEvent.click(tagBadge);
+
+    await waitFor(() => {
+      expect(mockUpdateNote).toHaveBeenCalledWith(mockNote.id, {
+        tags: ['#Tag1'], // Only #TagToRemove should be removed
+      });
+    });
+  });
+
+  it('removes a value via the metadata sidebar', async () => {
+    setupStore({ values: { 'key1': 'val1', 'keyToRemove': 'valToRemove' } });
+    render(<NoteEditor />);
+    const infoButton = screen.getByRole('button', { name: /Info/i });
+    fireEvent.click(infoButton);
+
+    // Values are displayed as "Key: Value" with an 'x' button.
+    // Find the 'x' button associated with 'keyToRemove'.
+    // This requires the 'x' button to be identifiable, e.g., via aria-label or test-id relative to the key.
+    // In NoteEditor.tsx, the remove button is:
+    // <Button size="sm" variant="ghost" onClick={() => removeValueFromMetadata(key)} className="h-6 w-6 p-0 text-destructive">×</Button>
+    // We need to find this button. It's inside a div with the key/value.
+    const valueDisplay = await screen.findByText((content, element) => {
+      return element?.tagName.toLowerCase() === 'span' && content.startsWith('keyToRemove:');
+    });
+    const valueContainer = valueDisplay.closest('div');
+    const removeButton = valueContainer?.querySelector('button.text-destructive');
+
+    expect(removeButton).toBeInTheDocument();
+    if (removeButton) {
+      fireEvent.click(removeButton);
+    }
+
+    await waitFor(() => {
+      expect(mockUpdateNote).toHaveBeenCalledWith(mockNote.id, {
+        values: { 'key1': 'val1' },
+      });
+    });
   });
 
   it('calls findAndSetEmbeddingMatches and switches tab when "Similar Content" is clicked', async () => {

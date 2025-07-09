@@ -26,17 +26,19 @@ const mockNotes: Note[] = [
 ];
 
 const mockFolders: Folder[] = [
-  { id: 'folder1', name: 'Work', noteIds: ['note2'], createdAt: new Date(), updatedAt: new Date() },
+  { id: 'folder1', name: 'Work', noteIds: ['note2'], createdAt: new Date(), updatedAt: new Date(), children: ['subfolder1'] },
+  { id: 'subfolder1', name: 'Project X', noteIds: [], parentId: 'folder1', createdAt: new Date(), updatedAt: new Date() },
   { id: 'folder2', name: 'Personal', noteIds: [], createdAt: new Date(), updatedAt: new Date() },
 ];
 
 const mockOntology: OntologyTree = {
   nodes: {
-    'tech': { id: 'tech', label: '#Tech', children: [] },
+    'tech': { id: 'tech', label: '#Tech', children: ['webApp'] }, // Corrected: use ID 'webApp'
+    'webApp': { id: 'webApp', label: '#WebApp', parentId: 'tech', children: [] },
     'project': { id: 'project', label: '#Project', children: [] },
-    'important': { id: 'important', label: '#Important', children: [] },
+    // 'important' can be removed if not used in expansion tests or add children if needed
   },
-  rootIds: ['tech', 'project', 'important'],
+  rootIds: ['tech', 'project'],
 };
 
 const mockUserProfile: UserProfile = {
@@ -444,4 +446,75 @@ describe('NotesList', () => {
     expect(screen.getByText(/Direct messages will appear here./i)).toBeInTheDocument();
   });
 
+  it('expands and collapses a folder with subfolders', async () => {
+    setupStore(mockNotes, mockFolders); // Use updated mockFolders
+    render(<NotesList viewMode="notes" />);
+
+    // Ensure Folders collapsible is open
+    const folderCollapsibleTrigger = screen.getByRole('button', { name: /Folders/i });
+    if (folderCollapsibleTrigger.getAttribute('data-state') === 'closed') {
+      fireEvent.click(folderCollapsibleTrigger);
+    }
+
+    const workFolderElement = await screen.findByText('Work');
+    // Subfolder "Project X" should not be visible initially
+    expect(screen.queryByText('Project X')).not.toBeInTheDocument();
+
+    // Find the expand button (ChevronRight icon) for "Work" folder
+    const workFolderContainer = workFolderElement.closest('div.my-0\\.5'); // Adjust selector based on actual DOM structure of renderFolderNode
+    const expandButton = workFolderContainer?.querySelector('button [lucide="chevron-right"]');
+    if (!expandButton) throw new Error("Expand button for Work folder not found");
+
+    fireEvent.click(expandButton.parentElement!); // Click the button element containing the icon
+
+    // "Project X" subfolder should now be visible
+    expect(await screen.findByText('Project X')).toBeInTheDocument();
+
+    // Find the collapse button (ChevronDown icon)
+    const collapseButton = workFolderContainer?.querySelector('button [lucide="chevron-down"]');
+    if (!collapseButton) throw new Error("Collapse button for Work folder not found");
+
+    fireEvent.click(collapseButton.parentElement!);
+
+    // "Project X" subfolder should be hidden again
+    await waitFor(() => {
+      expect(screen.queryByText('Project X')).not.toBeInTheDocument();
+    });
+  });
+
+  it('expands and collapses an ontology node with children in filter section', async () => {
+    setupStore(mockNotes, mockFolders, '', {}, mockOntology); // Use updated mockOntology
+    render(<NotesList viewMode="notes" />);
+
+    // Ensure Ontology filter collapsible is open
+    const ontologyCollapsibleTrigger = screen.getByRole('button', { name: /Filter by Ontology Tags/i });
+    if (ontologyCollapsibleTrigger.getAttribute('data-state') === 'closed') {
+      fireEvent.click(ontologyCollapsibleTrigger);
+    }
+
+    const techNodeElement = await screen.findByText('#Tech');
+    // Child node "#WebApp" should not be visible initially
+    expect(screen.queryByText('#WebApp')).not.toBeInTheDocument();
+
+    // Find the expand button for "#Tech" node
+    const techNodeContainer = techNodeElement.closest('div.group'); // renderOntologyFilterNode uses 'group' class
+    const expandButton = techNodeContainer?.querySelector('button [lucide="chevron-right"]');
+    if (!expandButton) throw new Error("Expand button for #Tech node not found");
+
+    fireEvent.click(expandButton.parentElement!);
+
+    // "#WebApp" child node should now be visible
+    expect(await screen.findByText('#WebApp')).toBeInTheDocument();
+
+    // Find the collapse button
+    const collapseButton = techNodeContainer?.querySelector('button [lucide="chevron-down"]');
+    if (!collapseButton) throw new Error("Collapse button for #Tech node not found");
+
+    fireEvent.click(collapseButton.parentElement!);
+
+    // "#WebApp" child node should be hidden again
+    await waitFor(() => {
+      expect(screen.queryByText('#WebApp')).not.toBeInTheDocument();
+    });
+  });
 });

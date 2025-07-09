@@ -1221,7 +1221,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
               if (remoteEmbeddingTagValue && localNote.embedding && localNote.embedding.length > 0) {
                 try {
                   const remoteEmbedding = JSON.parse(remoteEmbeddingTagValue) as number[];
-                  if (Array.isArray(remoteEmbedding) && remoteEmbedding.length > 0 && NoteService.cosineSimilarity([0],[0]) !== undefined) {
+                  // Check if remoteEmbedding is a valid array of numbers and has positive length.
+                  // NoteService.cosineSimilarity handles zero vectors or mismatched lengths by returning 0.
+                  if (Array.isArray(remoteEmbedding) && remoteEmbedding.length > 0 && remoteEmbedding.every(n => typeof n === 'number')) {
                     const similarity = NoteService.cosineSimilarity(remoteEmbedding, localNote.embedding);
                     const similarityThreshold = state.userProfile?.preferences.aiMatchingSensitivity ?? 0.7;
 

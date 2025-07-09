@@ -819,6 +819,7 @@ export function NoteEditor() {
                           value={value as string}
                           onChange={(e) => updateNote(currentNoteId, { fields: { ...currentNote.fields, [key]: e.target.value }})}
                           className="text-sm bg-transparent border-0 p-0 h-auto"
+                          data-testid={`field-input-${key}`}
                        />
                     ) : (
                       <p className="text-sm text-muted-foreground">{value as string}</p>

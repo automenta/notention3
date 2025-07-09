@@ -81,6 +81,8 @@ export class DBService {
 
   static async getAllNotes(): Promise<Note[]> {
     const notes: Note[] = [];
+    // PERFORMANCE TODO: For very large numbers of notes, notesStore.iterate() loads all notes into memory.
+    // This can be slow and memory-intensive. Consider pagination or indexed queries if performance becomes an issue.
     await notesStore.iterate((note: Note) => {
       notes.push(note);
     });

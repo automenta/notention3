@@ -47,6 +47,9 @@ export class NoteService {
     filters: SearchFilters = {}, // Default to empty object
     allNotes?: Note[]
   ): Promise<Note[]> {
+    // PERFORMANCE TODO: If `allNotes` is not provided, `DBService.getAllNotes()` loads all notes from IndexedDB into memory.
+    // For very large datasets, this initial load and subsequent client-side filtering can be slow.
+    // Consider implementing database-level indexing and querying if performance with many notes is critical.
     const sourceNotes = allNotes || await DBService.getAllNotes();
     const trimmedQuery = query.trim();
     const normalizedQuery = trimmedQuery.toLowerCase();

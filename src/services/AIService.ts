@@ -255,10 +255,28 @@ export const aiService = AIService.getInstance();
 useAppStore.subscribe(
   (state, prevState) => {
     const currentPrefs = state.userProfile?.preferences;
-    const prevPrefs = prevState.userProfile?.preferences;
+    const prevPrefs = prevState?.userProfile?.preferences; // Added optional chaining for prevState
 
-    if (!currentPrefs || !prevPrefs) return; // Should not happen if userProfile is always defined after init
+    // If either prefs object is undefined (e.g. initial state or profile not loaded yet),
+    // or if they are the same object (no change), then return.
+    // This also handles the case where userProfile itself might become undefined, though less likely with init.
+    if (!currentPrefs || !prevPrefs) {
+        // If only one is undefined, it's a change (e.g., profile loaded or cleared).
+        // If aiEnabled status changed due to this, it should be caught.
+        // A simple check: if one exists and has aiEnabled, and the other doesn't, consider it a change.
+        // Or, if currentPrefs exists and prevPrefs didn't, it's an initialization, potentially trigger.
+        // For simplicity, if prevPrefs is missing, assume it might be an initial setup or significant change.
+        if (currentPrefs && !prevPrefs) {
+             // Potentially treat as a settings change if AI is now enabled, was previously unknown
+             if (currentPrefs.aiEnabled) {
+                console.log("AI settings potentially changed (profile loaded), reinitializing AI models if AI enabled.");
+                aiService.reinitializeModels();
+             }
+        }
+        return; // Exit if either is null/undefined after the initial check.
+    }
 
+    // Proceed only if both currentPrefs and prevPrefs are valid objects
     const aiSettingsChanged =
       currentPrefs.aiEnabled !== prevPrefs.aiEnabled ||
       currentPrefs.ollamaApiEndpoint !== prevPrefs.ollamaApiEndpoint ||

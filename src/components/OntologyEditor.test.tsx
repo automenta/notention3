@@ -315,6 +315,58 @@ describe('OntologyEditor', () => {
     // Further DnD interaction testing is better suited for E2E.
   });
 
+  it('expands and collapses a node with children', async () => {
+    render(<WrappedOntologyEditor />);
+    const root1NodeElement = screen.getByText('#Root1').closest('div.group');
+    // Child1 should not be visible initially
+    expect(screen.queryByText('#Child1')).not.toBeInTheDocument();
+
+    // Find the expand button (ChevronRight icon) for #Root1
+    const expandButton = root1NodeElement?.querySelector('button [lucide="chevron-right"]');
+    if (!expandButton) throw new Error("Expand button for #Root1 not found");
+
+    fireEvent.click(expandButton.parentElement!); // Click the button element
+
+    // Child1 should now be visible
+    expect(await screen.findByText('#Child1')).toBeInTheDocument();
+
+    // Find the collapse button (ChevronDown icon) for #Root1
+    const collapseButton = root1NodeElement?.querySelector('button [lucide="chevron-down"]');
+    if (!collapseButton) throw new Error("Collapse button for #Root1 not found");
+
+    fireEvent.click(collapseButton.parentElement!);
+
+    // Child1 should be hidden again
+    await waitFor(() => {
+      expect(screen.queryByText('#Child1')).not.toBeInTheDocument();
+    });
+  });
+
+  it('adds a new child concept via dialog', async () => {
+    render(<WrappedOntologyEditor />);
+    fireEvent.click(screen.getByRole('button', { name: /Add Concept/i }));
+
+    const labelInput = await screen.findByPlaceholderText('e.g., AI, Project, Person');
+    fireEvent.change(labelInput, { target: { value: 'NewChildConcept' } });
+
+    // Select #Root1 as parent
+    const parentSelect = await screen.findByLabelText('Parent (optional)'); // Assuming label is associated
+    fireEvent.change(parentSelect, { target: { value: 'root1' } }); // 'root1' is the ID of #Root1
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Concept' })); // Modal's add button
+
+    await waitFor(() => {
+      expect(OntologyService.createNode).toHaveBeenCalledWith('NewChildConcept', 'root1');
+      expect(OntologyService.addNode).toHaveBeenCalled();
+      expect(mockUpdateOntology).toHaveBeenCalled();
+      expect(mockSetStoreOntology).toHaveBeenCalled();
+    });
+
+    // Verify the new child is conceptually under the parent (mocked OntologyService.addNode handles this)
+    // To actually see it in the UI, #Root1 would need to be expanded.
+  });
+
+
   it('handles ontology import and confirms overwrite', async () => {
     setupStore(); // Start with mockOntology
     const mockImportedOntology: OntologyTree = {

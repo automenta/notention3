@@ -11,14 +11,18 @@ vi.mock("@langchain/community/llms/ollama");
 vi.mock("@langchain/community/embeddings/ollama");
 vi.mock("@langchain/google-genai");
 vi.mock("@langchain/core/output_parsers");
+let capturedPromptMessages: any[] = [];
 vi.mock("@langchain/core/prompts", async () => {
     const actual = await vi.importActual("@langchain/core/prompts") as any;
     return {
         ...actual,
         ChatPromptTemplate: {
-            fromMessages: vi.fn().mockReturnValue({
-                pipe: vi.fn().mockReturnThis(), // For chaining
-                invoke: vi.fn()
+            fromMessages: vi.fn((messages) => {
+                capturedPromptMessages = messages;
+                return {
+                    pipe: vi.fn().mockReturnThis(), // For chaining
+                    invoke: vi.fn()
+                };
             }),
         }
     };
@@ -175,6 +179,10 @@ describe('AIService', () => {
           const result = await (aiService as any)[method](...args);
           expect(mockGeminiInstance.invoke).toHaveBeenCalled();
           expect(result).toEqual(typeof mockReturn === 'string' && method !== 'getSummarization' ? JSON.parse(mockReturn) : mockReturn);
+          if (method === 'getAutoTags') {
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in semantic tagging.");
+            expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
+          }
         });
 
         it(`should call preferred model (Ollama) and return parsed response for ${method}`, async () => {
@@ -184,6 +192,14 @@ describe('AIService', () => {
           const result = await (aiService as any)[method](...args);
           expect(mockOllamaInstance.invoke).toHaveBeenCalled();
           expect(result).toEqual(typeof mockReturn === 'string' && method !== 'getSummarization' ? JSON.parse(mockReturn) : mockReturn);
+          if (method === 'getAutoTags') {
+            // Check captured prompt messages for specific content
+            expect(capturedPromptMessages.length).toBeGreaterThan(0);
+            // Example: Check system message content
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in semantic tagging.");
+            // Example: Check human message template structure
+            expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
+          }
         });
 
         it(`should handle errors gracefully for ${method}`, async () => {

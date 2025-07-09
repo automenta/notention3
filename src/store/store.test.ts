@@ -154,6 +154,111 @@ describe('App Store', () => {
     expect(NoteService.deleteNote).toHaveBeenCalledWith(noteId);
   });
 
+  it('setOntology should update ontology state and call DB/Nostr services', async () => {
+    const { setOntology, userProfile } = useAppStore.getState();
+    const newOntologyData: OntologyTree = {
+      nodes: { 'node1': { id: 'node1', label: '#NewConcept', children: [] } },
+      rootIds: ['node1'],
+      updatedAt: new Date(),
+    };
+
+    (DBService.saveOntology as vi.Mock).mockResolvedValue(undefined);
+    // DBService.getOntology will be called by setOntology to re-fetch after save
+    (DBService.getOntology as vi.Mock).mockResolvedValue(newOntologyData);
+    (nostrService.publishOntologyForSync as vi.Mock).mockResolvedValue(['ontologyEventId']);
+    // Assume user is logged in for Nostr publish
+    useAppStore.setState({ userProfile: { ...initialUserProfile, nostrPubkey: 'testpubkey' } });
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); // Assume online
+
+    await setOntology(newOntologyData);
+
+    expect(DBService.saveOntology).toHaveBeenCalledWith(newOntologyData);
+    expect(useAppStore.getState().ontology).toEqual(newOntologyData);
+    expect(nostrService.publishOntologyForSync).toHaveBeenCalledWith(newOntologyData, userProfile?.nostrRelays);
+  });
+
+  it('setOntology should queue sync if offline', async () => {
+    const { setOntology } = useAppStore.getState();
+    const newOntologyData: OntologyTree = {
+      nodes: { 'node1': { id: 'node1', label: '#OfflineConcept', children: [] } },
+      rootIds: ['node1'],
+      updatedAt: new Date(),
+    };
+    (DBService.saveOntology as vi.Mock).mockResolvedValue(undefined);
+    (DBService.getOntology as vi.Mock).mockResolvedValue(newOntologyData);
+    (DBService.setOntologyNeedsSync as vi.Mock).mockResolvedValue(undefined);
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); // Assume offline
+
+    await setOntology(newOntologyData);
+
+    expect(DBService.saveOntology).toHaveBeenCalledWith(newOntologyData);
+    expect(useAppStore.getState().ontology).toEqual(newOntologyData);
+    expect(nostrService.publishOntologyForSync).not.toHaveBeenCalled();
+    expect(DBService.setOntologyNeedsSync).toHaveBeenCalledWith(true);
+  });
+
+  it('updateUserProfile should update userProfile state and call DBService', async () => {
+    const { updateUserProfile } = useAppStore.getState();
+    const profileUpdates: Partial<UserProfile> = {
+      preferences: {
+        ...initialUserProfile.preferences,
+        theme: 'dark',
+        aiEnabled: true,
+      },
+      nostrRelays: ['wss://new.relay.example.com'],
+    };
+
+    // DBService.saveUserProfile is already mocked to resolve undefined
+    // The action directly calls DBService.saveUserProfile and then set({ userProfile })
+
+    await updateUserProfile(profileUpdates as UserProfile); // Cast as UserProfile as the action expects full
+
+    const state = useAppStore.getState();
+    expect(DBService.saveUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+        preferences: expect.objectContaining({ theme: 'dark', aiEnabled: true }),
+        nostrRelays: ['wss://new.relay.example.com'],
+    }));
+    expect(state.userProfile?.preferences.theme).toBe('dark');
+    expect(state.userProfile?.preferences.aiEnabled).toBe(true);
+    expect(state.userProfile?.nostrRelays).toEqual(['wss://new.relay.example.com']);
+  });
+
+  it('createFolder should add a new folder and update state', async () => {
+    const { createFolder } = useAppStore.getState();
+    const folderName = "My Test Folder";
+    const parentId = undefined; // Or some existing folder ID
+
+    const mockNewFolder = {
+      id: 'folder-123',
+      name: folderName,
+      parentId,
+      noteIds: [],
+      children: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    vi.mock('../services/FolderService', () => ({ // Mock FolderService if not already done broadly
+        FolderService: {
+            createFolder: vi.fn().mockResolvedValue(mockNewFolder),
+            // Mock other FolderService methods if needed by other store actions
+            updateFolder: vi.fn(),
+            deleteFolder: vi.fn(),
+            getAllFolders: vi.fn().mockResolvedValue([]), // Used in initializeApp
+        }
+    }));
+    // Re-import or ensure FolderService mock is picked up if createFolder is called immediately
+    // For this test, direct mock before calling action is fine.
+
+    const newFolderId = await createFolder(folderName, parentId);
+
+    expect(newFolderId).toBe(mockNewFolder.id);
+    const state = useAppStore.getState();
+    expect(state.folders[mockNewFolder.id]).toBeDefined();
+    expect(state.folders[mockNewFolder.id].name).toBe(folderName);
+    expect(FolderService.createFolder).toHaveBeenCalledWith(folderName, parentId);
+  });
+
+
   it('setCurrentNote should update currentNoteId and editorContent', () => {
     const { createNote, setCurrentNote } = useAppStore.getState();
     // Manually add a note to the store for this test as createNote is async and might interfere with direct state check

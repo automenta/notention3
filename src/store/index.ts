@@ -449,8 +449,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  },
-
   updateFolder: async (id: string, updates: Partial<Folder>) => {
     const state = get();
     const oldFolder = state.folders[id];
@@ -458,7 +456,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const updatedFolder = await FolderService.updateFolder(id, updates);
     if (updatedFolder) {
-      let newFoldersState = { ...state.folders, [id]: updatedFolder };
+      const newFoldersState = { ...state.folders, [id]: updatedFolder };
 
       // Handle parent change logic for store state
       const oldParentId = oldFolder.parentId;
@@ -609,7 +607,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Nostr Actions Implementation
   initializeNostr: async () => {
     get().setLoading('network', true);
-    let userProfile = get().userProfile; // Get current profile, which should be initialized by initializeApp
+    const userProfile = get().userProfile; // Get current profile, which should be initialized by initializeApp
     const defaultRelays = get().nostrRelays; // These are the current store defaults or from initial load
 
     try {
@@ -933,7 +931,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setNostrRelays: async (newRelays: string[]) => {
     const state = get();
-    let userProfile = state.userProfile;
+    const userProfile = state.userProfile;
 
     if (userProfile) {
       // Update the nostrRelays in the userProfile object
@@ -1163,14 +1161,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const remoteNotes = await nostrService.fetchSyncedNotes(since, relays);
       let localNotesChanged = false;
 
+      // In syncWithNostr action:
+      // Note: DOMPurify import moved to top of file
       for (const remoteNote of remoteNotes) {
         const localNote = notes[remoteNote.id]; // from get()
         const remoteNoteUpdatedAt = new Date(remoteNote.updatedAt || 0);
 
         if (!localNote || (remoteNoteUpdatedAt > new Date(localNote.updatedAt || 0))) {
           console.log(`Remote note ${remoteNote.id} is newer or new. Updating local.`);
-          await DBService.saveNote(remoteNote);
-          set(s => ({ notes: { ...s.notes, [remoteNote.id]: remoteNote } }));
+          // Sanitize content from remote note before saving
+          const sanitizedContent = DOMPurify.sanitize(remoteNote.content);
+          const noteToSave = { ...remoteNote, content: sanitizedContent };
+
+          await DBService.saveNote(noteToSave);
+          set(s => ({ notes: { ...s.notes, [remoteNote.id]: noteToSave } }));
           localNotesChanged = true;
         }
         // If local is newer, it will be handled by pending sync ops processing.

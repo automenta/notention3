@@ -149,7 +149,7 @@ describe('OntologyService', () => {
   });
 
   it('should detect circular references', () => {
-    let circularOntology = JSON.parse(JSON.stringify(baseOntology)); // Deep clone
+    const circularOntology = JSON.parse(JSON.stringify(baseOntology)); // Deep clone
     const aiNodeId = Object.keys(circularOntology.nodes).find(k => circularOntology.nodes[k].label === '#AI')!;
     const mlNodeId = Object.keys(circularOntology.nodes).find(k => circularOntology.nodes[k].label === '#MachineLearning')!;
     // Make AI a child of ML (AI -> ML -> AI)
@@ -186,7 +186,7 @@ describe('OntologyService', () => {
   });
 
   it('should detect orphaned nodes', () => {
-    let orphanedOntology = JSON.parse(JSON.stringify(baseOntology));
+    const orphanedOntology = JSON.parse(JSON.stringify(baseOntology));
     const mlNodeId = Object.keys(orphanedOntology.nodes).find(k => orphanedOntology.nodes[k].label === '#MachineLearning')!;
     orphanedOntology.nodes[mlNodeId].parentId = 'non-existent-parent';
 

@@ -7,7 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
 import DOMPurify from 'dompurify';
 import { Button } from "./ui/button";
-// @ts-ignore
+// @ts-expect-error Tippy.js types are not fully compatible with this usage.
 import { tippy } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import { ScrollArea } from "./ui/scroll-area";
@@ -99,7 +99,7 @@ export function NoteEditor() {
             if (!trigger) return [];
 
             const allOntologyNodes = Object.values(ontology.nodes);
-            let filteredNodes = allOntologyNodes
+            const filteredNodes = allOntologyNodes
               .filter(node =>
                 (trigger === '#' && node.label.startsWith('#')) ||
                 (trigger === '@' && node.label.startsWith('@'))
@@ -148,7 +148,7 @@ export function NoteEditor() {
                   popup[0].hide();
                   return true;
                 }
-                // @ts-ignore
+                  // @ts-expect-error Tiptap's Mention extension render.onKeyDown prop type is not fully captured.
                 return reactRenderer?.ref?.onKeyDown?.(props);
               },
               onExit() {
@@ -311,7 +311,7 @@ export function NoteEditor() {
     const template = templates[templateId];
     if (!template) return;
 
-    let newContent = currentNote?.content || "";
+    const newContent = currentNote?.content || "";
     // Basic template content injection (can be more sophisticated)
     // For now, we'll primarily focus on metadata
     // newContent += `\n\n## ${template.name}\n`;
@@ -337,7 +337,7 @@ export function NoteEditor() {
     });
     // editor?.commands.setContent(newContent); // Update editor if content changed
     setSelectedTemplate("");
-  }, [currentNoteId, currentNote?.content, currentNote?.tags, currentNote?.values, currentNote?.fields, templates, updateNote, editor]);
+  }, [currentNoteId, currentNote?.content, currentNote?.tags, currentNote?.values, currentNote?.fields, templates, updateNote]);
 
   // This function is kept if we need manual insertion from elsewhere, but autocomplete handles editor insertion.
   const insertSemanticTagText = (tag: string) => {
@@ -411,9 +411,20 @@ export function NoteEditor() {
 
   const insertSummaryIntoEditor = () => {
     if (editor && currentSummary) {
+      // Escape HTML characters in the summary to ensure it's treated as plain text
+      const escapeHtml = (unsafe: string) => {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      };
+      const escapedSummary = escapeHtml(currentSummary);
+
       // Example: Insert summary at the beginning of the note, clearly marked.
       const currentContent = editor.getHTML();
-      const summaryBlock = `<p><strong>AI Summary:</strong></p><p>${currentSummary}</p><hr>`;
+      const summaryBlock = `<p><strong>AI Summary:</strong></p><p>${escapedSummary}</p><hr>`;
       editor.commands.setContent(summaryBlock + currentContent, true); // `true` to parse HTML
       setShowSummaryModal(false);
       toast.info("Summary inserted into note.");
@@ -464,9 +475,9 @@ export function NoteEditor() {
             </Button>
             <Button variant="outline" size="sm">
               <Pin size={16} />
-            </Button>
+            </Button> */}
           </div>
-        </div>
+        </div> {/* Closes flex items-center justify-between mb-4 */}
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -608,9 +619,7 @@ export function NoteEditor() {
           className="prose prose-sm dark:prose-invert max-w-none focus:outline-none h-full"
         />
       </div>
-
       {/* Metadata Sidebar (Info Panel) */}
-      {/* Simplified for now, main interaction for tags/values is via autocomplete or dedicated inputs if needed */}
       <div
         className={`
           ${showMetadata ? 'w-72 p-4' : 'w-0 p-0'}
@@ -645,7 +654,6 @@ export function NoteEditor() {
             </CardContent>
           </Card>
 
-          {/* Tags */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
@@ -667,7 +675,6 @@ export function NoteEditor() {
                         placeholder="#AI, @Person, etc."
                         onKeyDown={(e) => e.key === 'Enter' && addTagToMetadata(newTag)}
                       />
-                      {/* Suggestion for sidebar input */}
                        <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
                         {getSuggestedTagsForSidebar().filter(t => t.toLowerCase().includes(newTag.toLowerCase()) && !currentNote.tags.includes(t)).slice(0,5).map(suggested => (
                           <Button key={suggested} variant="outline" size="sm" onClick={() => addTagToMetadata(suggested)}>
@@ -702,7 +709,6 @@ export function NoteEditor() {
             </CardContent>
           </Card>
 
-          {/* Values */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
@@ -769,7 +775,6 @@ export function NoteEditor() {
             </CardContent>
           </Card>
 
-          {/* Fields (Template-defined) */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Fields</CardTitle>
@@ -780,7 +785,7 @@ export function NoteEditor() {
                   <div key={key} className="bg-muted p-2 rounded">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium">{key}</span>
-                       {isEditing && ( // Assuming fields are primarily managed by templates, but allow removal
+                       {isEditing && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -791,10 +796,9 @@ export function NoteEditor() {
                         </Button>
                        )}
                     </div>
-                    {/* Allow editing field values if isEditing */}
                     {isEditing ? (
                        <Input
-                          value={value as string} // Assuming string for now
+                          value={value as string}
                           onChange={(e) => updateNote(currentNoteId, { fields: { ...currentNote.fields, [key]: e.target.value }})}
                           className="text-sm bg-transparent border-0 p-0 h-auto"
                        />
@@ -833,7 +837,7 @@ const SuggestionList = React.forwardRef<HTMLDivElement, SuggestionListProps>((pr
 
   useEffect(() => setSelectedIndex(0), [props.items]);
 
-  // @ts-ignore
+   // @ts-expect-error Type inference for useImperativeHandle with forwardRef is complex here.
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {
       if (event.key === 'ArrowUp') {

@@ -187,36 +187,28 @@ export class AIService {
     // This requires an embedding model. Ollama and Gemini might support embeddings directly
     // or require a separate Langchain Embeddings class.
     // For Ollama, you can use OllamaEmbeddings. For Gemini, GoogleGenerativeAIEmbeddings.
+    // These would be initialized in `initializeModels` and selected via a new `getActiveEmbeddingModel` method.
 
-    // Placeholder: This part needs specific embedding model integration.
-    // For now, let's assume the main model can also do embeddings if it's a multimodal one or supports it.
-    // This is a simplification and might not work directly.
-    const model = this.getActiveModel();
+    // --- START OF PLACEHOLDER IMPLEMENTATION ---
+    // const embeddingModel = this.getActiveEmbeddingModel(); // Conceptual
+    // if (!embeddingModel) {
+    //   console.warn("AIService: getEmbeddingVector - No active embedding model configured.");
+    //   return [];
+    // }
+    // console.log("AIService: getEmbeddingVector called for text snippet:", text.substring(0,100));
+    // try {
+    //   const vector = await embeddingModel.embedQuery(text);
+    //   console.log("AI Response (Embedding Vector):", vector ? `Vector of dimension ${vector.length}` : "Failed");
+    //   return Array.isArray(vector) ? vector : [];
+    // } catch (error) {
+    //   console.error("Error getting embedding vector:", error);
+    //   return [];
+    // }
+    // --- END OF PLACEHOLDER IMPLEMENTATION ---
 
-    // Placeholder for actual embedding model check
-    // For now, we assume only dedicated embedding models will be implemented later.
-    // So, this function will return [] until a proper embedding model is integrated.
-    // To use with Ollama, you'd use OllamaEmbeddings. For Gemini, GoogleGenerativeAIEmbeddings.
-    const hasEmbeddingCapability = false; // TODO: Set this based on actual embedding model availability
-
-    if (!model || !hasEmbeddingCapability) {
-        console.warn("AIService: getEmbeddingVector - No active or suitable AI model with embedding capabilities configured.");
-        return [];
-    }
-
-    console.log("AIService: getEmbeddingVector called for text snippet:", text.substring(0,100));
-    try {
-      // This is a conceptual call. The actual method might differ based on the model wrapper.
-      // e.g., for OllamaEmbeddings: await this.ollamaEmbeddings.embedQuery(text);
-      // For some chat models, this might not be directly available.
-      // We might need to use a dedicated embedding model.
-      const vector = await (model as any).embedQuery(text); // This is speculative
-      console.log("AI Response (Embedding Vector):", vector ? `Vector of dimension ${vector.length}` : "Failed");
-      return Array.isArray(vector) ? vector : [];
-    } catch (error) {
-      console.error("Error getting embedding vector:", error);
-      return [];
-    }
+    // For now, as full embedding model integration is deferred:
+    console.warn("AIService: getEmbeddingVector - Full implementation deferred. Returning empty array.");
+    return [];
   }
 }
 

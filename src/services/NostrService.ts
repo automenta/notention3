@@ -119,10 +119,11 @@ export class NostrService {
     targetRelays?: string[],
     encrypt: boolean = false,
     recipientPublicKey?: string,
-    privacySettings?: { // Added privacy settings parameter
+    privacySettings?: {
       sharePublicNotesGlobally: boolean;
       shareTagsWithPublicNotes: boolean;
       shareValuesWithPublicNotes: boolean;
+      shareEmbeddingsWithPublicNotes?: boolean; // Added new setting
     }
   ): Promise<string[]> { // Returns event IDs from relays
     if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
@@ -134,6 +135,7 @@ export class NostrService {
       sharePublicNotesGlobally: false,
       shareTagsWithPublicNotes: false,
       shareValuesWithPublicNotes: false,
+      shareEmbeddingsWithPublicNotes: false, // Default to false
     };
 
     // If trying to publish a public (non-encrypted) note but global sharing is off, prevent.
@@ -174,6 +176,16 @@ export class NostrService {
         for (const [key, value] of Object.entries(note.values)) {
           tags.push(['param', key, value]);
         }
+      }
+    }
+
+    // Add embedding if public, sharing is enabled, and embedding exists
+    if (!encrypt && currentPrivacySettings.shareEmbeddingsWithPublicNotes && note.embedding && note.embedding.length > 0) {
+      try {
+        tags.push(['embedding', JSON.stringify(note.embedding)]);
+      } catch (e) {
+        console.error("Failed to stringify note embedding for Nostr tag:", e);
+        // Decide if you want to proceed without the embedding or throw an error
       }
     }
 
@@ -374,23 +386,27 @@ export class NostrService {
     const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
     if (relaysToPublish.length === 0) {
       console.warn('No relays configured or provided to publish note for sync.');
-      return [];
+      return []; // Return empty array, not just eventId
     }
 
     console.log(`Publishing note for sync to ${relaysToPublish.join(', ')}:`, signedEvent);
+    // Store the signedEvent.id with the note (this should be done by the caller, e.g., in the store)
+    // For now, we just return the event ID.
+
     try {
       const publicationPromises = this.pool.publish(relaysToPublish, signedEvent);
       const results = await Promise.allSettled(publicationPromises);
-      const successfulEventIds: string[] = [];
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          console.log(`Sync Event ${signedEvent.id} published successfully to ${relaysToPublish[index]}`);
-          successfulEventIds.push(signedEvent.id);
-        } else {
-          console.error(`Failed to publish sync event ${signedEvent.id} to ${relaysToPublish[index]}:`, result.reason);
-        }
-      });
-      return successfulEventIds;
+      const successfulRelaysCount = results.filter(r => r.status === 'fulfilled').length;
+
+      if (successfulRelaysCount > 0) {
+        console.log(`Sync Event ${signedEvent.id} published successfully to ${successfulRelaysCount} relay(s).`);
+        // Return the event ID if published to at least one relay.
+        // The caller (store) will be responsible for updating the note with this ID.
+        return [signedEvent.id]; // Returning an array containing the ID for consistency, though it's one event.
+      } else {
+        console.error(`Failed to publish sync event ${signedEvent.id} to any relay.`);
+        return [];
+      }
     } catch (error) {
       console.error('Error during sync note pool.publish:', error);
       return [];
@@ -550,6 +566,95 @@ export class NostrService {
     } catch (error) {
       console.error(`Error fetching event ${eventId}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Publishes a Kind 5 Event Deletion event.
+   * @param eventIdsToMarkForDeletion Array of event IDs (strings) to be deleted.
+   * @param reason Optional reason for deletion.
+   * @param targetRelays Optional relays to publish to.
+   * @returns Promise resolving with event IDs from relays where deletion event was published.
+   */
+  public async publishDeletionEvent(
+    eventIdsToMarkForDeletion: string[],
+    reason: string = "",
+    targetRelays?: string[]
+  ): Promise<string[]> {
+    if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
+      throw new Error('User not logged in. Cannot publish deletion event.');
+    }
+    if (!eventIdsToMarkForDeletion || eventIdsToMarkForDeletion.length === 0) {
+      console.warn('No event IDs provided for deletion.');
+      return [];
+    }
+
+    const tags = eventIdsToMarkForDeletion.map(id => ['e', id]);
+    if (reason) {
+      tags.push(['reason', reason]);
+    }
+
+    const unsignedEvent: UnsignedEvent = {
+      kind: 5, // Event Deletion
+      pubkey: this.publicKey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: tags,
+      content: reason, // NIP-09 suggests reason can be in content if not in tags.
+    };
+
+    const eventId = getEventHash(unsignedEvent);
+    const signature = signEvent(unsignedEvent, this.privateKey);
+    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+
+    const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToPublish.length === 0) {
+      console.warn('No relays for deletion event.');
+      return [];
+    }
+
+    console.log(`Publishing Kind 5 deletion event for IDs: ${eventIdsToMarkForDeletion.join(', ')} to ${relaysToPublish.join(', ')}:`, signedEvent);
+    try {
+      const pubPromises = this.pool.publish(relaysToPublish, signedEvent);
+      const results = await Promise.allSettled(pubPromises);
+      return results.filter(r => r.status === 'fulfilled').map(() => signedEvent.id);
+    } catch (error) {
+      console.error('Error during Kind 5 deletion event pool.publish:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetches Kind 5 (deletion) events authored by the current user.
+   * @param since Optional timestamp to fetch events after.
+   * @param targetRelays Optional relays.
+   * @returns Promise resolving with an array of Event objects.
+   */
+  public async fetchOwnDeletionEvents(since?: number, targetRelays?: string[]): Promise<Event[]> {
+    if (!this.isLoggedIn() || !this.publicKey) {
+      console.warn('User not logged in. Cannot fetch own deletion events.');
+      return [];
+    }
+
+    const relaysToUse = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToUse.length === 0) {
+      console.warn('No relays configured to fetch deletion events.');
+      return [];
+    }
+
+    const filters: Filter[] = [{
+      kinds: [5], // Kind 5 for Event Deletion
+      authors: [this.publicKey],
+      ...(since ? { since } : {})
+    }];
+
+    console.log(`Fetching own Kind 5 deletion events from ${relaysToUse.join(', ')} with filters:`, filters);
+    try {
+      const events = await this.pool.list(relaysToUse, filters);
+      // Sort by created_at descending to process more recent deletions first if needed, though order might not strictly matter.
+      return events.sort((a, b) => b.created_at - a.created_at);
+    } catch (error) {
+      console.error('Error fetching own deletion events:', error);
+      return [];
     }
   }
 }

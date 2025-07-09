@@ -34,17 +34,23 @@ export function NetworkPanel() {
     addTopicSubscription, // New action
     removeTopicSubscription, // New action
     activeTopicSubscriptions, // New state
+    embeddingMatches, // New state for embedding matches
+    findAndSetEmbeddingMatches, // New action for embedding matches
+    currentNoteId, // To know which note to find matches for
+    setCurrentNote, // To navigate to a local matched note
+    setSidebarTab, // To switch to notes tab when viewing a local match
   } = useAppStore();
 
   const [newTopic, setNewTopic] = useState('');
-  const [selectedTopicNote, setSelectedTopicNote] = useState<NostrEvent | null>(null); // For topic notes
-  const [isViewNoteModalOpen, setIsViewNoteModalOpen] = useState(false); // For topic notes
-  const [selectedMatchedNoteEvent, setSelectedMatchedNoteEvent] = useState<NostrEvent | null>(null); // For matched notes
-  const [isViewMatchedNoteModalOpen, setIsViewMatchedNoteModalOpen] = useState(false); // For matched notes
-  const [dmRecipient, setDmRecipient] = useState<string | null>(null); // For DM modal
+  const [selectedTopicNote, setSelectedTopicNote] = useState<NostrEvent | null>(null);
+  const [isViewNoteModalOpen, setIsViewNoteModalOpen] = useState(false);
+  const [selectedMatchedNoteEvent, setSelectedMatchedNoteEvent] = useState<NostrEvent | null>(null);
+  const [isViewMatchedNoteModalOpen, setIsViewMatchedNoteModalOpen] = useState(false);
+  const [dmRecipient, setDmRecipient] = useState<string | null>(null);
   const [dmContent, setDmContent] = useState<string>("");
   const [isDmModalOpen, setIsDmModalOpen] = useState(false);
   const [isFetchingMatchedNote, setIsFetchingMatchedNote] = useState(false);
+  const [isFindingEmbeddingMatches, setIsFindingEmbeddingMatches] = useState(false);
 
 
   useEffect(() => {
@@ -214,8 +220,41 @@ export function NetworkPanel() {
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleString();
+  const formatDate = (timestamp: number | Date) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  const handleFindEmbeddingMatches = async () => {
+    if (!currentNoteId) {
+      toast.info("Please select or open a note first to find similar notes based on its content.");
+      return;
+    }
+    if (!userProfile?.preferences.aiEnabled) {
+      toast.error("AI Features Disabled", { description: "Please enable AI features in settings to find semantic matches."});
+      return;
+    }
+    setIsFindingEmbeddingMatches(true);
+    try {
+      await findAndSetEmbeddingMatches(currentNoteId);
+      // Toast for success/no matches is handled within the store action if desired, or can be added here based on embeddingMatches length
+      const updatedMatches = useAppStore.getState().embeddingMatches;
+      if (updatedMatches.length > 0) {
+        toast.success(`${updatedMatches.length} similar local notes found.`);
+      } else {
+        toast.info("No similar local notes found based on content embeddings.");
+      }
+    } catch (e: any) {
+      toast.error("Error finding embedding matches.", { description: e.message });
+    } finally {
+      setIsFindingEmbeddingMatches(false);
+    }
+  };
+
+  const handleViewLocalMatchedNote = (noteId: string) => {
+    setCurrentNote(noteId);
+    setSidebarTab('notes'); // Switch to notes tab/editor
+    // Potentially close the network panel or scroll to the top of the editor
+    toast.info("Navigated to local note.");
   };
 
 
@@ -282,36 +321,120 @@ export function NetworkPanel() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Users size={20} />
-              Network Matches
+              Content Matches (Local)
             </CardTitle>
             <CardDescription>
-              Notes from others that share similar tags or topics.
+              Local notes with similar content to your currently selected note, based on AI embeddings.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {matches.length === 0 ? (
+            {embeddingMatches.length === 0 ? (
               <div className="text-center text-muted-foreground py-6">
                 <Users size={40} className="mx-auto mb-3 opacity-50" />
-                <p className="text-base font-medium">No matches found yet</p>
+                <p className="text-base font-medium">No content matches found</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Publish notes with tags to discover connections.
+                  Select a note and click "Find Similar by Content" to populate this section.
                 </p>
               </div>
             ) : (
               <ScrollArea className="h-[200px] pr-3">
                 <div className="space-y-3">
-                  {matches.slice().reverse().map((match) => ( // Show newest first
+                  {embeddingMatches.map((match) => ( // Already sorted by similarity in store
                     <div key={match.id} className="p-3 border border-border rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-sm font-semibold text-primary truncate">
-                          Note by: {match.targetAuthor.slice(0, 10)}...{match.targetAuthor.slice(-6)}
+                          {useAppStore.getState().notes[match.localNoteId!]?.title || "Untitled Note"}
                         </span>
                         <Badge variant="outline" className="text-xs">
-                          {/* Similarity: {Math.round(match.similarity * 100)}% */}
-                          {new Date(match.timestamp).toLocaleDateString()}
+                          Similarity: {Math.round(match.similarity * 100)}%
                         </Badge>
                       </div>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Updated: {formatDate(match.timestamp)}
+                      </p>
                       {match.sharedTags.length > 0 && (
+                        <div className="mb-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-0.5">Common Tags:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {match.sharedTags.map((tag) => (
+                              <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0.5">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button
+                          variant="link"
+                          size="xs"
+                          className="p-0 h-auto text-xs"
+                          onClick={() => handleViewLocalMatchedNote(match.localNoteId!)}
+                        >
+                          <Eye size={12} className="mr-1" /> View Local Note
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 w-full"
+              onClick={handleFindEmbeddingMatches}
+              disabled={isFindingEmbeddingMatches || !currentNoteId || !userProfile?.preferences.aiEnabled}
+            >
+              {isFindingEmbeddingMatches && <LoadingSpinner size="sm" className="mr-2" />}
+              Find Similar by Content (Current Note)
+            </Button>
+            {!userProfile?.preferences.aiEnabled && <p className="text-xs text-destructive mt-1 text-center">Enable AI features in settings.</p>}
+            {!currentNoteId && userProfile?.preferences.aiEnabled && <p className="text-xs text-muted-foreground mt-1 text-center">Select a note to find similar content.</p>}
+          </CardContent>
+        </Card>
+
+        {/* Nostr Network Matches */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Share2 size={20} /> {/* Changed Icon */}
+              Network Matches
+            </CardTitle>
+            <CardDescription>
+              Notes from others on Nostr that match your local notes based on tags or content embeddings.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {matches.length === 0 ? (
+              <div className="text-center text-muted-foreground py-6">
+                <Share2 size={40} className="mx-auto mb-3 opacity-50" />
+                <p className="text-base font-medium">No Nostr matches found yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Publish notes with tags to discover connections on the Nostr network.
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[200px] pr-3">
+                <div className="space-y-3">
+                  {matches.slice().reverse().map((match) => (
+                    <div key={match.id} className="p-3 border border-border rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-primary truncate">
+                          {match.matchType === 'embedding' && match.localNoteId ?
+                           `Local: "${useAppStore.getState().notes[match.localNoteId]?.title?.substring(0,20) || 'Note'}" matches Remote by Content` :
+                           `Remote Note by: ${match.targetAuthor.slice(0, 10)}...`}
+                        </span>
+                        <Badge variant={match.matchType === 'embedding' ? "default" : "outline"} className="text-xs capitalize">
+                          {match.matchType || 'Tag'} Match ({Math.round(match.similarity * 100)}%)
+                        </Badge>
+                      </div>
+                       <p className="text-xs text-muted-foreground mb-1">
+                        {match.matchType === 'embedding' && match.localNoteId ?
+                         `Remote Author: ${match.targetAuthor.slice(0,10)}...` :
+                         `Timestamp: ${formatDate(match.timestamp)}`}
+                      </p>
+                      {match.sharedTags && match.sharedTags.length > 0 && (
                         <div className="mb-1">
                           <p className="text-xs font-medium text-muted-foreground mb-0.5">Shared Tags:</p>
                           <div className="flex flex-wrap gap-1">
@@ -331,8 +454,8 @@ export function NetworkPanel() {
                           onClick={() => handleViewMatchedNote(match.targetNoteId, match.targetAuthor)}
                           disabled={isFetchingMatchedNote && selectedMatchedNoteEvent?.id !== match.targetNoteId}
                         >
-                          {isFetchingMatchedNote && !selectedMatchedNoteEvent && <LoadingSpinner size="xs" className="mr-1" />}
-                          <Eye size={12} className="mr-1" /> View Note
+                          {isFetchingMatchedNote && selectedMatchedNoteEvent?.id !== match.targetNoteId && <LoadingSpinner size="xs" className="mr-1" />}
+                          <Eye size={12} className="mr-1" /> View Nostr Note
                         </Button>
                         <Button
                           variant="link"
@@ -351,7 +474,7 @@ export function NetworkPanel() {
             {/* Button to refresh or fetch matches - Future enhancement */}
             {userProfile?.nostrPubkey && (
                  <Button variant="outline" size="sm" className="mt-4 w-full" disabled>
-                    Find New Matches (Coming Soon)
+                    Refresh Nostr Matches (Coming Soon)
                 </Button>
             )}
           </CardContent>

@@ -1,5 +1,6 @@
 import { Ollama } from "@langchain/community/llms/ollama";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { OllamaEmbeddings } from "@langchain/community/embeddings/ollama";
+import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { StringOutputParser } from "@langchain/core/output_parsers";
@@ -18,6 +19,8 @@ export class AIService {
   private static instance: AIService;
   private ollama: Ollama | null = null;
   private gemini: ChatGoogleGenerativeAI | null = null;
+  private ollamaEmbeddings: OllamaEmbeddings | null = null;
+  private geminiEmbeddings: GoogleGenerativeAIEmbeddings | null = null;
 
   private constructor() {
     this.initializeModels();
@@ -33,36 +36,56 @@ export class AIService {
   private initializeModels() {
     const { userProfile } = useAppStore.getState(); // Access store state directly
 
+    const { userProfile } = useAppStore.getState(); // Access store state directly
+
     if (userProfile?.preferences.aiEnabled) {
-      if (userProfile.preferences.ollamaApiEndpoint) {
+      const ollamaApiEndpoint = userProfile.preferences.ollamaApiEndpoint;
+      const ollamaModel = userProfile.preferences.ollamaEmbeddingModel || "nomic-embed-text"; // Default embedding model
+      const ollamaChatModel = userProfile.preferences.ollamaChatModel || "llama3";
+
+      if (ollamaApiEndpoint) {
         try {
           this.ollama = new Ollama({
-            baseUrl: userProfile.preferences.ollamaApiEndpoint,
-            model: "llama3", // TODO: Make model configurable
+            baseUrl: ollamaApiEndpoint,
+            model: ollamaChatModel,
           });
-          console.log("Ollama model initialized with endpoint:", userProfile.preferences.ollamaApiEndpoint);
+          this.ollamaEmbeddings = new OllamaEmbeddings({
+            baseUrl: ollamaApiEndpoint,
+            model: ollamaModel,
+          });
+          console.log("Ollama models initialized with endpoint:", ollamaApiEndpoint);
         } catch (error) {
-          console.error("Failed to initialize Ollama:", error);
+          console.error("Failed to initialize Ollama models:", error);
           this.ollama = null;
+          this.ollamaEmbeddings = null;
         }
       }
 
-      if (userProfile.preferences.geminiApiKey) {
+      const geminiApiKey = userProfile.preferences.geminiApiKey;
+      const geminiEmbeddingModel = userProfile.preferences.geminiEmbeddingModel || "embedding-001"; // Default embedding model
+      const geminiChatModel = userProfile.preferences.geminiChatModel || "gemini-pro";
+
+      if (geminiApiKey) {
         try {
           this.gemini = new ChatGoogleGenerativeAI({
-            apiKey: userProfile.preferences.geminiApiKey,
-            modelName: "gemini-pro", // TODO: Make model configurable
-            safetySettings: [ // Default safety settings
+            apiKey: geminiApiKey,
+            modelName: geminiChatModel,
+            safetySettings: [
               {
                 category: HarmCategory.HARM_CATEGORY_HARASSMENT,
                 threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
               },
             ],
           });
-          console.log("Gemini model initialized.");
+          this.geminiEmbeddings = new GoogleGenerativeAIEmbeddings({
+            apiKey: geminiApiKey,
+            modelName: geminiEmbeddingModel,
+          });
+          console.log("Gemini models initialized.");
         } catch (error) {
-          console.error("Failed to initialize Gemini:", error);
+          console.error("Failed to initialize Gemini models:", error);
           this.gemini = null;
+          this.geminiEmbeddings = null;
         }
       }
     }
@@ -72,14 +95,32 @@ export class AIService {
   public reinitializeModels() {
     this.ollama = null;
     this.gemini = null;
+    this.ollamaEmbeddings = null;
+    this.geminiEmbeddings = null;
     this.initializeModels();
   }
 
-  private getActiveModel(): Ollama | ChatGoogleGenerativeAI | null {
-    // Prioritize Gemini if available, then Ollama
-    // TODO: Make this selection configurable by the user
+  private getActiveChatModel(): Ollama | ChatGoogleGenerativeAI | null {
+    // TODO: Make this selection configurable by the user, e.g., prefer Ollama, prefer Gemini, or specific model
+    const preferredProvider = useAppStore.getState().userProfile?.preferences.aiProviderPreference;
+    if (preferredProvider === 'gemini' && this.gemini) return this.gemini;
+    if (preferredProvider === 'ollama' && this.ollama) return this.ollama;
+
+    // Default preference
     if (this.gemini) return this.gemini;
     if (this.ollama) return this.ollama;
+    return null;
+  }
+
+  private getActiveEmbeddingModel(): OllamaEmbeddings | GoogleGenerativeAIEmbeddings | null {
+    // TODO: Make this selection configurable by the user
+    const preferredProvider = useAppStore.getState().userProfile?.preferences.aiProviderPreference;
+    if (preferredProvider === 'gemini' && this.geminiEmbeddings) return this.geminiEmbeddings;
+    if (preferredProvider === 'ollama' && this.ollamaEmbeddings) return this.ollamaEmbeddings;
+
+    // Default preference
+    if (this.geminiEmbeddings) return this.geminiEmbeddings;
+    if (this.ollamaEmbeddings) return this.ollamaEmbeddings;
     return null;
   }
 
@@ -90,9 +131,9 @@ export class AIService {
 
   public async getOntologySuggestions(existingOntology: OntologyTree, context?: string): Promise<any[]> {
     if (!this.isAIEnabled()) return [];
-    const model = this.getActiveModel();
+    const model = this.getActiveChatModel();
     if (!model) {
-      console.warn("No active AI model for ontology suggestions.");
+      console.warn("No active AI chat model for ontology suggestions.");
       return [];
     }
 
@@ -121,9 +162,9 @@ export class AIService {
 
   public async getAutoTags(noteContent: string, noteTitle?: string, existingOntology?: OntologyTree): Promise<string[]> {
     if (!this.isAIEnabled()) return [];
-    const model = this.getActiveModel();
+    const model = this.getActiveChatModel();
     if (!model) {
-      console.warn("No active AI model for auto-tagging.");
+      console.warn("No active AI chat model for auto-tagging.");
       return [];
     }
 
@@ -154,9 +195,9 @@ export class AIService {
 
   public async getSummarization(noteContent: string, noteTitle?: string): Promise<string> {
     if (!this.isAIEnabled()) return "";
-    const model = this.getActiveModel();
+    const model = this.getActiveChatModel();
     if (!model) {
-      console.warn("No active AI model for summarization.");
+      console.warn("No active AI chat model for summarization.");
       return "";
     }
 
@@ -184,31 +225,26 @@ export class AIService {
 
   public async getEmbeddingVector(text: string): Promise<number[]> {
     if (!this.isAIEnabled()) return [];
-    // This requires an embedding model. Ollama and Gemini might support embeddings directly
-    // or require a separate Langchain Embeddings class.
-    // For Ollama, you can use OllamaEmbeddings. For Gemini, GoogleGenerativeAIEmbeddings.
-    // These would be initialized in `initializeModels` and selected via a new `getActiveEmbeddingModel` method.
 
-    // --- START OF PLACEHOLDER IMPLEMENTATION ---
-    // const embeddingModel = this.getActiveEmbeddingModel(); // Conceptual
-    // if (!embeddingModel) {
-    //   console.warn("AIService: getEmbeddingVector - No active embedding model configured.");
-    //   return [];
-    // }
-    // console.log("AIService: getEmbeddingVector called for text snippet:", text.substring(0,100));
-    // try {
-    //   const vector = await embeddingModel.embedQuery(text);
-    //   console.log("AI Response (Embedding Vector):", vector ? `Vector of dimension ${vector.length}` : "Failed");
-    //   return Array.isArray(vector) ? vector : [];
-    // } catch (error) {
-    //   console.error("Error getting embedding vector:", error);
-    //   return [];
-    // }
-    // --- END OF PLACEHOLDER IMPLEMENTATION ---
+    const embeddingModel = this.getActiveEmbeddingModel();
+    if (!embeddingModel) {
+      console.warn("AIService: getEmbeddingVector - No active embedding model configured or initialized.");
+      return [];
+    }
 
-    // For now, as full embedding model integration is deferred:
-    console.warn("AIService: getEmbeddingVector - Full implementation deferred. Returning empty array.");
-    return [];
+    console.log("AIService: getEmbeddingVector called for text snippet:", text.substring(0,100));
+    try {
+      const vector = await embeddingModel.embedQuery(text);
+      console.log("AI Response (Embedding Vector):", vector ? `Vector of dimension ${vector.length}` : "Failed to generate embedding");
+      return Array.isArray(vector) ? vector : [];
+    } catch (error) {
+      console.error("Error getting embedding vector:", error);
+      // Check if the error is specific to model not found or misconfiguration
+      if (error instanceof Error && (error.message.includes("404") || error.message.includes("model not found"))) {
+        console.error(`Embedding model might not be available or endpoint is incorrect. Model: ${embeddingModel.constructor.name}`);
+      }
+      return [];
+    }
   }
 }
 
@@ -218,11 +254,40 @@ export const aiService = AIService.getInstance();
 // Listener for store changes to reinitialize AI models if settings change
 useAppStore.subscribe(
   (state, prevState) => {
-    const aiEnabledChanged = state.userProfile?.preferences.aiEnabled !== prevState.userProfile?.preferences.aiEnabled;
-    const ollamaEndpointChanged = state.userProfile?.preferences.ollamaApiEndpoint !== prevState.userProfile?.preferences.ollamaApiEndpoint;
-    const geminiKeyChanged = state.userProfile?.preferences.geminiApiKey !== prevState.userProfile?.preferences.geminiApiKey;
+    const currentPrefs = state.userProfile?.preferences;
+    const prevPrefs = prevState?.userProfile?.preferences; // Added optional chaining for prevState
 
-    if (aiEnabledChanged || ollamaEndpointChanged || geminiKeyChanged) {
+    // If either prefs object is undefined (e.g. initial state or profile not loaded yet),
+    // or if they are the same object (no change), then return.
+    // This also handles the case where userProfile itself might become undefined, though less likely with init.
+    if (!currentPrefs || !prevPrefs) {
+        // If only one is undefined, it's a change (e.g., profile loaded or cleared).
+        // If aiEnabled status changed due to this, it should be caught.
+        // A simple check: if one exists and has aiEnabled, and the other doesn't, consider it a change.
+        // Or, if currentPrefs exists and prevPrefs didn't, it's an initialization, potentially trigger.
+        // For simplicity, if prevPrefs is missing, assume it might be an initial setup or significant change.
+        if (currentPrefs && !prevPrefs) {
+             // Potentially treat as a settings change if AI is now enabled, was previously unknown
+             if (currentPrefs.aiEnabled) {
+                console.log("AI settings potentially changed (profile loaded), reinitializing AI models if AI enabled.");
+                aiService.reinitializeModels();
+             }
+        }
+        return; // Exit if either is null/undefined after the initial check.
+    }
+
+    // Proceed only if both currentPrefs and prevPrefs are valid objects
+    const aiSettingsChanged =
+      currentPrefs.aiEnabled !== prevPrefs.aiEnabled ||
+      currentPrefs.ollamaApiEndpoint !== prevPrefs.ollamaApiEndpoint ||
+      currentPrefs.geminiApiKey !== prevPrefs.geminiApiKey ||
+      currentPrefs.ollamaEmbeddingModel !== prevPrefs.ollamaEmbeddingModel ||
+      currentPrefs.ollamaChatModel !== prevPrefs.ollamaChatModel ||
+      currentPrefs.geminiEmbeddingModel !== prevPrefs.geminiEmbeddingModel ||
+      currentPrefs.geminiChatModel !== prevPrefs.geminiChatModel ||
+      currentPrefs.aiProviderPreference !== prevPrefs.aiProviderPreference;
+
+    if (aiSettingsChanged) {
       console.log("AI settings changed, reinitializing AI models.");
       aiService.reinitializeModels();
     }

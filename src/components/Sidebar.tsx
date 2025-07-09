@@ -1,4 +1,4 @@
-import { FileText, Share2, Settings, Hash, MessageSquare, Plus } from "lucide-react"; // Added MessageSquare
+import { FileText, Share2, Settings, Hash, MessageSquare, Plus, Users } from "lucide-react"; // Added MessageSquare, Users
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -7,6 +7,7 @@ import { NotesList } from "./NotesList";
 import { OntologyEditor } from "./OntologyEditor";
 import { NetworkPanel } from "./NetworkPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { ContactsPanel } from "./ContactsPanel"; // Import ContactsPanel
 
 export function Sidebar() {
   const { sidebarTab, setSidebarTab, createNote, searchQuery, setSearchQuery } = useAppStore(
@@ -47,25 +48,29 @@ export function Sidebar() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={sidebarTab} onValueChange={(value) => setSidebarTab(value as 'notes' | 'ontology' | 'network' | 'settings' | 'chats')} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-5 bg-sidebar-accent m-2"> {/* Changed to grid-cols-5 */}
-          <TabsTrigger value="notes" className="flex items-center gap-1">
+      <Tabs value={sidebarTab} onValueChange={(value) => setSidebarTab(value as "notes" | "ontology" | "network" | "settings" | "contacts" | "chats")} className="flex-1 flex flex-col">
+        <TabsList className="grid w-full grid-cols-6 bg-sidebar-accent m-2"> {/* Changed to grid-cols-6 */}
+          <TabsTrigger value="notes" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2">
             <FileText size={14} />
             <span className="hidden sm:inline">Notes</span>
           </TabsTrigger>
-          <TabsTrigger value="chats" className="flex items-center gap-1"> {/* Added Chats Tab */}
+          <TabsTrigger value="chats" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2">
             <MessageSquare size={14} />
             <span className="hidden sm:inline">Chats</span>
           </TabsTrigger>
-          <TabsTrigger value="ontology" className="flex items-center gap-1">
+          <TabsTrigger value="contacts" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2"> {/* New Contacts Tab */}
+            <Users size={14} />
+            <span className="hidden sm:inline">People</span>
+          </TabsTrigger>
+          <TabsTrigger value="ontology" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2">
             <Hash size={14} />
             <span className="hidden sm:inline">Tags</span>
           </TabsTrigger>
-          <TabsTrigger value="network" className="flex items-center gap-1">
+          <TabsTrigger value="network" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2">
             <Share2 size={14} />
             <span className="hidden sm:inline">Net</span>
           </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-1">
+          <TabsTrigger value="settings" className="flex items-center gap-1 text-xs sm:text-sm px-1 sm:px-2">
             <Settings size={14} />
             <span className="hidden sm:inline">Set</span>
           </TabsTrigger>
@@ -73,10 +78,13 @@ export function Sidebar() {
 
         <div className="flex-1 overflow-hidden">
           <TabsContent value="notes" className="h-full m-0">
-            <NotesList viewMode="notes" /> {/* Pass viewMode */}
+            <NotesList viewMode="notes" />
           </TabsContent>
-          <TabsContent value="chats" className="h-full m-0"> {/* Added Chats Tab Content */}
-            <NotesList viewMode="chats" /> {/* Pass viewMode, NotesList will adapt */}
+          <TabsContent value="chats" className="h-full m-0">
+            <NotesList viewMode="chats" /> {/* This remains for DM threads overview */}
+          </TabsContent>
+          <TabsContent value="contacts" className="h-full m-0"> {/* New Contacts Panel Content */}
+            <ContactsPanel />
           </TabsContent>
           <TabsContent value="ontology" className="h-full m-0">
             <OntologyEditor />

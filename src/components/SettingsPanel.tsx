@@ -1,7 +1,8 @@
-import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck } from "lucide-react";
+import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck, Import } from "lucide-react"; // Added Import icon
 import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "./ui/dialog"; // For import modal
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
 import { ScrollArea } from "./ui/scroll-area";
@@ -24,6 +25,17 @@ export function SettingsPanel() {
 
   // State for relay management is kept here
   const [newRelayUrl, setNewRelayUrl] = useState("");
+  const [isImportKeyModalOpen, setIsImportKeyModalOpen] = useState(false);
+  const [importedNsec, setImportedNsec] = useState("");
+  const [importKeyError, setImportKeyError] = useState<string | null>(null);
+
+  // State for displaying newly generated private key for backup
+  const [showNewSkBackupModal, setShowNewSkBackupModal] = useState(false);
+  const [newSkForBackup, setNewSkForBackup] = useState<string | null>(null);
+  const [newPkForBackupDisplay, setNewPkForBackupDisplay] = useState<string | null>(null);
+  const [newSkBackupConfirmed, setNewSkBackupConfirmed] = useState(false);
+  const [copiedNewSk, setCopiedNewSk] = useState(false);
+
 
   const handleExportData = async () => {
     const data = await DBService.exportData();
@@ -61,15 +73,83 @@ export function SettingsPanel() {
   };
 
   const handleGenerateKeypair = async () => {
-    if (confirm('Are you sure you want to generate a new keypair? This will change your Nostr identity and you MUST back up the new private key.')) {
-      const newPublicKey = await generateAndStoreNostrKeys();
-      if (newPublicKey) {
-        alert(`New keypair generated! Your new public key is: ${newPublicKey}. Please ensure your private key is backed up (this app does not display it again after generation).`);
+    if (confirm('This will generate a new Nostr keypair, replacing your current one if it exists. Your current private key will be overwritten in this app. You MUST back up the new private key. Continue?')) {
+      const { publicKey, privateKey } = await generateAndStoreNostrKeys(); // No args means generate new
+      if (publicKey && privateKey) {
+        // New keys were generated, show modal for private key backup
+        setNewSkForBackup(privateKey);
+        setNewPkForBackupDisplay(publicKey);
+        setNewSkBackupConfirmed(false); // Reset confirmation
+        setCopiedNewSk(false);
+        setShowNewSkBackupModal(true);
+        // Toast or alert about public key can be shown after modal confirmation or here.
+        // For now, modal handles the critical private key part.
+      } else if (publicKey) {
+        // This case should ideally not happen if generateAndStoreNostrKeys always returns sk when new keys are made.
+        // It implies keys were somehow stored but sk wasn't returned (e.g. error or existing key logic if that were part of this path)
+        toast.success(`Nostr keys updated/verified. Public Key: ${publicKey.substring(0,10)}...`);
       } else {
-        alert('Failed to generate keypair. Check console for errors.');
+        toast.error('Failed to generate and store new keypair.', { description: userProfile?.preferences.aiEnabled ? errors.network : "Check console for errors." });
       }
     }
   };
+
+  const handleConfirmNewSkBackup = () => {
+    if (!newSkBackupConfirmed) {
+      toast.error("Please check the box to confirm you've backed up the private key.");
+      return;
+    }
+    setShowNewSkBackupModal(false);
+    setNewSkForBackup(null);
+    setNewPkForBackupDisplay(null);
+    toast.success("New Nostr identity set up successfully!");
+    // The keys are already stored by generateAndStoreNostrKeys. This modal was just for backup UX.
+  };
+
+  const copyNewSkToClipboard = async () => {
+    if (newSkForBackup) {
+      try {
+        await navigator.clipboard.writeText(newSkForBackup);
+        setCopiedNewSk(true);
+        setTimeout(() => setCopiedNewSk(false), 2000);
+      } catch (err) {
+        toast.error('Failed to copy private key.');
+      }
+    }
+  };
+
+
+  const handleOpenImportKeyModal = () => {
+    setImportedNsec("");
+    setImportKeyError(null);
+    setIsImportKeyModalOpen(true);
+  };
+
+  const handleImportPrivateKey = async () => {
+    if (!importedNsec.trim().startsWith("nsec")) {
+      setImportKeyError("Invalid private key format. It should start with 'nsec'.");
+      return;
+    }
+    if (!confirm('Importing a new private key will replace your current Nostr identity in this app. Ensure you have backups if needed. Continue?')) {
+      return;
+    }
+    setImportKeyError(null);
+    try {
+      // nostrService is not directly available here. We rely on the store action.
+      const newPublicKey = await generateAndStoreNostrKeys(importedNsec.trim()); // Pass only private key
+      if (newPublicKey) {
+        alert(`Private key imported successfully! Your new public key is: ${newPublicKey}.`);
+        setIsImportKeyModalOpen(false);
+        setImportedNsec("");
+      } else {
+        setImportKeyError('Failed to import private key. It might be invalid or an error occurred.');
+      }
+    } catch (e: any) {
+      setImportKeyError(`Error importing private key: ${e.message}`);
+      console.error("Error importing private key:", e);
+    }
+  };
+
 
   const handleLogout = async () => {
     if (confirm('Are you sure you want to log out? This will clear your local keys.')) {
@@ -156,9 +236,21 @@ export function SettingsPanel() {
                 <Key size={16} className="mr-2" />
                 Generate New Keys
               </Button>
-               <p className="text-xs text-muted-foreground mt-1">
-                Warning: This replaces your current keys. Back up your old private key if needed.
-                You MUST back up the new private key.
+              <p className="text-xs text-muted-foreground mt-1">
+                Generates a new identity. Your current keys in this app will be replaced.
+                You will NOT be shown the private key here; ensure it's backed up if generated via the initial wizard.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start mt-2"
+                onClick={handleOpenImportKeyModal}
+              >
+                <Import size={16} className="mr-2" />
+                Import Existing Private Key
+              </Button>
+              <p className="text-xs text-muted-foreground mt-1">
+                Use an existing Nostr identity by importing your 'nsec' private key.
               </p>
               <Button
                 variant="outline"
@@ -261,7 +353,7 @@ export function SettingsPanel() {
                 disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
                 onCheckedChange={(checked) => {
                   if (userProfile && userProfile.privacySettings) {
-                    updateUserProfile({
+                    storeUpdateUserProfile({ // Use storeUpdateUserProfile
                       ...userProfile,
                       privacySettings: {
                         ...userProfile.privacySettings,
@@ -291,6 +383,31 @@ export function SettingsPanel() {
                       privacySettings: {
                         ...userProfile.privacySettings,
                         shareValuesWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareEmbeddingsWithPublicNotes" className="text-sm">Share Embeddings with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include content embeddings (if AI enabled) when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareEmbeddingsWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareEmbeddingsWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally || !userProfile?.preferences.aiEnabled} // Disable if global public or AI is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    storeUpdateUserProfile({ // Use storeUpdateUserProfile
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareEmbeddingsWithPublicNotes: checked,
                       },
                     });
                   }
@@ -377,6 +494,42 @@ export function SettingsPanel() {
                 </div>
 
                 <div className="space-y-1">
+                  <Label htmlFor="ollamaChatModel" className="text-sm">Ollama Chat Model</Label>
+                  <Input
+                    id="ollamaChatModel"
+                    value={userProfile.preferences.ollamaChatModel || "llama3"}
+                    placeholder="e.g., llama3, mistral"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        storeUpdateUserProfile({
+                          ...userProfile,
+                          preferences: { ...userProfile.preferences, ollamaChatModel: e.target.value },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: llama3</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="ollamaEmbeddingModel" className="text-sm">Ollama Embedding Model</Label>
+                  <Input
+                    id="ollamaEmbeddingModel"
+                    value={userProfile.preferences.ollamaEmbeddingModel || "nomic-embed-text"}
+                    placeholder="e.g., nomic-embed-text, mxbai-embed-large"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        storeUpdateUserProfile({
+                          ...userProfile,
+                          preferences: { ...userProfile.preferences, ollamaEmbeddingModel: e.target.value },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: nomic-embed-text</p>
+                </div>
+
+                <div className="space-y-1">
                   <Label htmlFor="geminiApiKey" className="text-sm">Google Gemini API Key</Label>
                   <Input
                     id="geminiApiKey"
@@ -385,12 +538,9 @@ export function SettingsPanel() {
                     placeholder="Enter your Gemini API Key"
                     onChange={(e) => {
                       if (userProfile) {
-                        storeUpdateUserProfile({ // Use storeUpdateUserProfile
+                        storeUpdateUserProfile({
                           ...userProfile,
-                          preferences: {
-                            ...userProfile.preferences,
-                            geminiApiKey: e.target.value,
-                          },
+                          preferences: { ...userProfile.preferences, geminiApiKey: e.target.value },
                         });
                       }
                     }}
@@ -399,11 +549,70 @@ export function SettingsPanel() {
                     Your API key for Google Gemini (optional).
                   </p>
                 </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="geminiChatModel" className="text-sm">Gemini Chat Model</Label>
+                  <Input
+                    id="geminiChatModel"
+                    value={userProfile.preferences.geminiChatModel || "gemini-pro"}
+                    placeholder="e.g., gemini-pro, gemini-1.5-flash"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        storeUpdateUserProfile({
+                          ...userProfile,
+                          preferences: { ...userProfile.preferences, geminiChatModel: e.target.value },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: gemini-pro</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="geminiEmbeddingModel" className="text-sm">Gemini Embedding Model</Label>
+                  <Input
+                    id="geminiEmbeddingModel"
+                    value={userProfile.preferences.geminiEmbeddingModel || "embedding-001"}
+                    placeholder="e.g., embedding-001, text-embedding-004"
+                    onChange={(e) => {
+                      if (userProfile) {
+                        storeUpdateUserProfile({
+                          ...userProfile,
+                          preferences: { ...userProfile.preferences, geminiEmbeddingModel: e.target.value },
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">Default: embedding-001</p>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="aiProviderPreference" className="text-sm">Preferred AI Provider</Label>
+                  <select
+                    id="aiProviderPreference"
+                    value={userProfile.preferences.aiProviderPreference || "gemini"}
+                    onChange={(e) => {
+                      if (userProfile) {
+                        storeUpdateUserProfile({
+                          ...userProfile,
+                          preferences: { ...userProfile.preferences, aiProviderPreference: e.target.value as 'ollama' | 'gemini' },
+                        });
+                      }
+                    }}
+                    className="w-full p-2 border rounded bg-background text-foreground"
+                  >
+                    <option value="gemini">Gemini (if API key provided)</option>
+                    <option value="ollama">Ollama (if endpoint provided)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Which AI provider to use if both are configured.
+                  </p>
+                </div>
               </>
             )}
             
             <p className="text-xs text-muted-foreground">
-              AI features can help with ontology suggestions, auto-tagging, and summarization. Configure your preferred provider.
+              AI features can help with ontology suggestions, auto-tagging, summarization, and semantic matching. Configure your preferred provider and models.
             </p>
           </CardContent>
         </Card>
@@ -474,6 +683,90 @@ export function SettingsPanel() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Import Private Key Modal */}
+        <Dialog open={isImportKeyModalOpen} onOpenChange={setIsImportKeyModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Import Existing Private Key</DialogTitle>
+              <DialogDescription>
+                Paste your Nostr private key (starting with 'nsec') to use your existing identity.
+                This will replace any current identity stored in this app.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-4">
+              <div>
+                <Label htmlFor="importNsecKey">Private Key (nsec)</Label>
+                <Input
+                  id="importNsecKey"
+                  type="password" // Mask the input
+                  value={importedNsec}
+                  onChange={(e) => setImportedNsec(e.target.value)}
+                  placeholder="nsec1..."
+                  className="font-mono"
+                />
+              </div>
+              {importKeyError && <p className="text-sm text-destructive">{importKeyError}</p>}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+              <Button onClick={handleImportPrivateKey} disabled={!importedNsec.trim()}>Import Key</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal for Backing Up Newly Generated Private Key */}
+        {showNewSkBackupModal && newSkForBackup && newPkForBackupDisplay && (
+          <Dialog open={showNewSkBackupModal} onOpenChange={(open) => { if(!open) setShowNewSkBackupModal(false); /* Allow closing with Esc/overlay */ }}>
+            <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle>IMPORTANT: Back Up Your New Private Key</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <Alert variant="destructive">
+                  <Terminal className="h-4 w-4" />
+                  <AlertTitle>CRITICAL: Secure Your Private Key NOW!</AlertTitle>
+                  <AlertDescription>
+                    This is the <strong>ONLY</strong> time your new private key (nsec) will be shown.
+                    It is essential for accessing your Nostr identity and cannot be recovered if lost.
+                    Copy it and store it in a secure, secret place (e.g., password manager, offline storage).
+                  </AlertDescription>
+                </Alert>
+                <div>
+                  <Label htmlFor="newlyGeneratedPkDisplay">New Public Key (npub)</Label>
+                  <Input id="newlyGeneratedPkDisplay" value={newPkForBackupDisplay} readOnly className="font-mono text-xs mt-1"/>
+                </div>
+                <div>
+                  <Label htmlFor="newlyGeneratedSkDisplay">New Private Key (nsec)</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input id="newlyGeneratedSkDisplay" value={newSkForBackup} readOnly className="font-mono text-xs"/>
+                    <Button variant="outline" size="icon" onClick={copyNewSkToClipboard} title="Copy Private Key">
+                      {copiedNewSk ? <Check size={16} /> : <Copy size={16} />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2 mt-4">
+                  <Checkbox
+                    id="newSkBackupConfirmed"
+                    checked={newSkBackupConfirmed}
+                    onCheckedChange={(checked) => setNewSkBackupConfirmed(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="newSkBackupConfirmed"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    I have securely backed up my new private key.
+                  </label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleConfirmNewSkBackup} disabled={!newSkBackupConfirmed}>
+                  Confirm Backup & Continue
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </ScrollArea>
   );

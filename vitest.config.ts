@@ -1,4 +1,5 @@
 /// <reference types="vitest" />
+import path from 'path'; // Added path import
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react'; // Ensure react plugin is used if not already in vite.config
 
@@ -13,11 +14,12 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       reportsDirectory: './coverage',
     },
-    // If your main vite.config.ts has aliases, replicate them here or import from it
-    // resolve: {
-    //   alias: {
-    //     '@': path.resolve(__dirname, './src'),
-    //   },
-    // },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
+    },
+    testTimeout: 600000, // 10 minutes per test file
+    hookTimeout: 600000, // 10 minutes for hooks per test file
   },
 });

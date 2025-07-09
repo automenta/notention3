@@ -63,6 +63,7 @@ export interface SyncQueueNoteOp {
   noteId: string;
   action: 'save' | 'delete'; // 'save' implies create or update
   timestamp: Date; // Timestamp of the operation
+  nostrEventId?: string; // The ID of the Nostr event (e.g., Kind 4 for note, or the event to be deleted by Kind 5)
 }
 
 const ONTOLOGY_NEEDS_SYNC_KEY = 'ontology_needs_sync';
@@ -80,6 +81,8 @@ export class DBService {
 
   static async getAllNotes(): Promise<Note[]> {
     const notes: Note[] = [];
+    // PERFORMANCE TODO: For very large numbers of notes, notesStore.iterate() loads all notes into memory.
+    // This can be slow and memory-intensive. Consider pagination or indexed queries if performance becomes an issue.
     await notesStore.iterate((note: Note) => {
       notes.push(note);
     });

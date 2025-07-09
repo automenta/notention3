@@ -6,18 +6,20 @@ import { Note } from '../../shared/types';
 // Mocks
 vi.mock('./db'); // Mock DBService
 
-// Mock nostr-tools functions used by NostrService if they are not part of the test's focus
-// For SimplePool, we'll mock its methods.
-const mockPublishResult = Promise.resolve(); // Simulate successful publish
+// Define mocks for nostr-tools components BEFORE vi.mock is called
+const mockPublishResult = Promise.resolve();
 const mockSubInstance = {
   on: vi.fn(),
   unsub: vi.fn(),
 };
 const mockPool = {
-  publish: vi.fn().mockReturnValue([mockPublishResult]), // publish returns an array of promises
+  publish: vi.fn().mockReturnValue([mockPublishResult]),
   sub: vi.fn().mockReturnValue(mockSubInstance),
+  list: vi.fn().mockResolvedValue([]), // Add list mock
+  get: vi.fn().mockResolvedValue(null),  // Add get mock
   close: vi.fn(),
 };
+
 vi.mock('nostr-tools', async () => {
   const actual = await vi.importActual('nostr-tools') as any;
   return {

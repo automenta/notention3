@@ -83,7 +83,10 @@
     "workbox-window": "^7.3.0",
     "zod": "^3.25.20",
     "zustand": "^5.0.6",
-    "langchain": "^0.2.11"
+    "langchain": "^0.2.11",
+    "@langchain/community": "^0.2.19",
+    "@langchain/google-genai": "^0.0.22",
+    "@tanstack/react-virtual": "^3.8.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",
@@ -106,6 +109,7 @@
     "@vitest/ui": "^1.6.0",
     "jsdom": "^24.1.0",
     "@testing-library/react": "^16.0.0",
-    "@testing-library/jest-dom": "^6.4.8"
+    "@testing-library/jest-dom": "^6.4.8",
+    "@playwright/test": "^1.45.3"
   }
 }

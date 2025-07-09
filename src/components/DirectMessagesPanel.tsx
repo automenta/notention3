@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
 import { DirectMessage, UserProfile } from '../../shared/types';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -29,28 +30,28 @@ export function DirectMessagesPanel() {
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
   const [newMessageContent, setNewMessageContent] = useState('');
   const [newPeerPubkey, setNewPeerPubkey] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Ref for the scrollable container of messages
+  const messagesScrollParentRef = useRef<HTMLDivElement>(null);
+
 
   // Subscription management
   const dmSubscriptionId = useRef<string | null>(null);
 
   useEffect(() => {
     if (userProfile?.nostrPubkey && subscribeToDirectMessages) {
-      // Subscribe to DMs when component mounts and user is logged in
-      const subId = subscribeToDirectMessages(); // This should return a subscription ID
+      const subId = subscribeToDirectMessages();
       if (subId) {
         dmSubscriptionId.current = subId;
       }
     }
     return () => {
-      // Unsubscribe when component unmounts
       if (dmSubscriptionId.current && unsubscribeFromNostr) {
         unsubscribeFromNostr(dmSubscriptionId.current);
         dmSubscriptionId.current = null;
       }
     };
   }, [userProfile?.nostrPubkey, subscribeToDirectMessages, unsubscribeFromNostr]);
-
 
   const conversations = useMemo(() => {
     if (!userProfile) return {};
@@ -85,9 +86,20 @@ export function DirectMessagesPanel() {
     return selectedPeer ? conversations[selectedPeer]?.messages || [] : [];
   }, [selectedPeer, conversations]);
 
+  // Virtualizer for messages
+  const rowVirtualizer = useVirtualizer({
+    count: currentChatMessages.length,
+    getScrollElement: () => messagesScrollParentRef.current,
+    estimateSize: useCallback(() => 70, []), // Estimate 70px per message row, adjust as needed
+    overscan: 10,
+  });
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentChatMessages]);
+    // Scroll to bottom when new messages arrive or chat is selected
+    if (currentChatMessages.length > 0) {
+      rowVirtualizer.scrollToIndex(currentChatMessages.length - 1, { align: 'end', behavior: 'smooth' });
+    }
+  }, [currentChatMessages, rowVirtualizer]);
 
   const handleSendMessage = async () => {
     if (!selectedPeer || !newMessageContent.trim() || !userProfile?.nostrPubkey || !sendDirectMessage) return;
@@ -248,27 +260,42 @@ export function DirectMessagesPanel() {
                 <CardTitle className="text-base font-medium">{shortenPubkey(selectedPeer)}</CardTitle>
               </div>
             </CardHeader>
-            <ScrollArea className="flex-1 p-3 space-y-3 bg-muted/20">
-              {currentChatMessages.map(dm => (
-                <div
-                  key={dm.id}
-                  className={`flex ${dm.from === userProfile.nostrPubkey ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[70%] p-2 rounded-lg text-sm ${
-                      dm.from === userProfile.nostrPubkey
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-card border'
-                    }`}
-                  >
-                    <p>{dm.content}</p>
-                    <p className={`text-xs mt-1 ${dm.from === userProfile.nostrPubkey ? 'text-primary-foreground/70' : 'text-muted-foreground/70'}`}>
-                        {new Date(dm.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
+            {/* Scrollable area for messages, now using the ref for virtualizer */}
+            <ScrollArea className="flex-1 bg-muted/20" ref={messagesScrollParentRef}>
+              <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map(virtualItem => {
+                  const dm = currentChatMessages[virtualItem.index];
+                  if (!dm) return null;
+                  return (
+                    <div
+                      key={dm.id}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualItem.size}px`,
+                        transform: `translateY(${virtualItem.start}px)`,
+                        padding: '0.375rem 0.75rem', // Equivalent to p-3 on individual items, adjusted for container
+                      }}
+                      className={`flex ${dm.from === userProfile.nostrPubkey ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[70%] p-2 rounded-lg text-sm ${
+                          dm.from === userProfile.nostrPubkey
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-card border'
+                        }`}
+                      >
+                        <p>{dm.content}</p>
+                        <p className={`text-xs mt-1 ${dm.from === userProfile.nostrPubkey ? 'text-primary-foreground/70' : 'text-muted-foreground/70'}`}>
+                          {new Date(dm.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </ScrollArea>
             <div className="p-3 border-t bg-background">
               <div className="flex items-center gap-2">

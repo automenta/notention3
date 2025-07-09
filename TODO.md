@@ -126,21 +126,11 @@ This development plan organizes the Notention specification into implementation 
 
 ## Remaining Work for Future Iteration
 - **AI Enhancements**:
-    - Fully implement and test "Embedding vectors for alternative matching" in `AIService.ts` and integrate into the matching logic. This includes choosing and configuring specific embedding models (e.g., OllamaEmbeddings, GoogleGenerativeAIEmbeddings) and updating user settings if necessary.
+    - Integrate existing AI embedding vector generation (from `AIService.ts`) into the note matching logic. This includes how embeddings are stored/retrieved with notes (locally and potentially via Nostr) and how they are compared for similarity.
 - **Testing**:
-    - Write comprehensive UI component tests using Vitest and @testing-library/react.
-    - Implement the UI (E2E) test strategy using Playwright for key user flows.
+    - Write comprehensive UI component tests using Vitest and `@testing-library/react` for currently untested or minimally tested components (e.g., `NoteEditor.tsx`, `OntologyEditor.tsx` (beyond basic DnD), `NotesList.tsx` (interactions), `SettingsPanel.tsx` (detailed functionality)).
+    - Expand Playwright E2E test coverage for more key user flows (e.g., ontology manipulation, Nostr publishing/DMing, AI feature usage, contact management).
     - Investigate and resolve Vitest execution timeouts in the development/testing environment to enable reliable local and CI test runs.
-    - Expand unit test coverage for services and store actions, particularly focusing on more complex interactions and edge cases for sync logic.
-- **Ontology Editor**:
-    - Implement the "Drag-and-drop tree editor" for concepts and hierarchies in `OntologyEditor.tsx` for a more intuitive UX.
+    - Complete and expand unit test coverage for `AIService.ts` (mocking LangChain components effectively) and ensure high coverage for other services/store, focusing on complex interactions and edge cases.
 - **Performance**:
-    - Investigate and implement list virtualization for `NotesList.tsx` and other potentially long lists (e.g., DMs, ontology nodes in editor) to improve performance with large datasets.
-    - Profile application for other performance bottlenecks on low-end devices.
-- **Nostr Sync**:
-    - Implement robust handling for deleted notes during Nostr sync (e.g., using Kind 5 events or specific deletion markers) beyond just removing from the local sync queue.
-- **User Experience (UX) / Polish**:
-    - Add specific UI for managing a "buddy list" or contacts for DMs, beyond relying on message history.
-    - Refine sorting options in `NotesList.tsx`.
-    - Implement user-facing import/export UI for ontology specifically (currently part of general data export/import).
-    - Enhance backup prompts and key management UX.
+    - Profile application for performance bottlenecks on low-end devices, particularly with large numbers of notes, complex ontologies, or frequent Nostr activity.

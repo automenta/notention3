@@ -56,6 +56,10 @@ export class NoteService {
       notesToSearch = notesToSearch.filter(note => note.status === filters.status);
     }
 
+    if (filters.folderId) {
+      notesToSearch = notesToSearch.filter(note => note.folderId === filters.folderId);
+    }
+
     if (filters.tags && filters.tags.length > 0) {
       // Use original casing from filters.tags for getSemanticMatches
       const allSemanticFilterTags = new Set<string>();

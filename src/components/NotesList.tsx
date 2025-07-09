@@ -46,6 +46,9 @@ export function NotesList({ viewMode }: NotesListProps) {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(globalSearchQuery); // Debounced value for triggering search
   const [expandedOntologyNodes, setExpandedOntologyNodes] = useState<Set<string>>(new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set()); // For folder tree
+  const [sortOption, setSortOption] = useState<'updatedAt' | 'title' | 'createdAt'>('updatedAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
 
   const allNotes = useMemo(() => Object.values(notesMap), [notesMap]);
   const allFolders = useMemo(() => Object.values(foldersMap), [foldersMap]);
@@ -92,11 +95,43 @@ export function NotesList({ viewMode }: NotesListProps) {
           searchFilters,
           allNotes
         );
-        const sortedNotes = results.sort((a, b) => {
+        let sortedNotes = [...results]; // Create a mutable copy for sorting
+
+        // Primary sort logic based on sortOption and sortDirection
+        sortedNotes.sort((a, b) => {
+          let compareA, compareB;
+          switch (sortOption) {
+            case 'title':
+              compareA = a.title.toLowerCase();
+              compareB = b.title.toLowerCase();
+              break;
+            case 'createdAt':
+              compareA = new Date(a.createdAt).getTime();
+              compareB = new Date(b.createdAt).getTime();
+              break;
+            case 'updatedAt':
+            default:
+              compareA = new Date(a.updatedAt).getTime();
+              compareB = new Date(b.updatedAt).getTime();
+              break;
+          }
+
+          if (compareA < compareB) {
+            return sortDirection === 'asc' ? -1 : 1;
+          }
+          if (compareA > compareB) {
+            return sortDirection === 'asc' ? 1 : -1;
+          }
+          return 0;
+        });
+
+        // Secondary sort by pinned status (pinned notes always first)
+        sortedNotes.sort((a, b) => {
           if (a.pinned && !b.pinned) return -1;
           if (!a.pinned && b.pinned) return 1;
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          return 0;
         });
+
         setDisplayedItems(sortedNotes);
       } else if (viewMode === 'chats') {
         // Filter DMs based on debouncedSearchTerm
@@ -134,17 +169,18 @@ export function NotesList({ viewMode }: NotesListProps) {
       setCurrentNote((item as Note).id);
     } else if (viewMode === 'chats') {
       // For chats, clicking a DM summary could navigate to a dedicated DM panel or view
-      // For now, let's just log it, or set a state to open a DM panel later
       const dm = item as DirectMessage;
       const otherParty = dm.from === userProfile?.nostrPubkey ? dm.to : dm.from;
-      console.log("Clicked DM thread with:", otherParty);
-      // Example: useAppStore.setState({ currentDmChatPubkey: otherParty, sidebarTab: 'network' }); // to open DM panel
-      // Or, if DirectMessagesPanel is part of NotesList/Sidebar structure:
-      // useAppStore.getState().openDirectMessagePanel(otherParty);
-      toast.info(`Opening chat with ${otherParty.substring(0,10)}... (UI Placeholder)`);
-      // For now, let's switch to the Network tab as a placeholder for where DMs are also handled.
-      // A proper DM view would be better.
-      // setSidebarTab('network');
+      // Example: useAppStore.setState({ currentDmChatPubkey: otherParty, sidebarTab: 'contacts' }); // Navigate to contacts/DM panel
+      // For now, this action is handled by the component that lists DM threads if a dedicated one exists,
+      // or could trigger opening a modal/panel.
+      // The current `DirectMessagesPanel` handles its own selection.
+      // If `NotesList` in `viewMode='chats'` is still used, it should probably set a global state for the selected chat.
+      toast.info(`Selected chat with ${otherParty.substring(0,10)}... Navigating to DMs often happens via Contacts or a dedicated DM panel.`);
+      // As `DirectMessagesPanel` exists, this viewMode in NotesList might be less used or deprecated for DMs.
+      // If it's meant to be a quick preview, setCurrentNote or a similar action for DMs might be needed.
+      // For now, let's assume navigation to a DM-focused area is desired.
+      setSidebarTab('contacts'); // Or 'directMessages' if that tab exists.
     }
   };
 
@@ -350,6 +386,30 @@ export function NotesList({ viewMode }: NotesListProps) {
           />
         </div>
       </form>
+
+      {/* Sort Options - Only for 'notes' viewMode */}
+      {viewMode === 'notes' && (
+        <div className="p-2 border-b border-border flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Sort by:</span>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as typeof sortOption)}
+            className="p-1 border rounded-md bg-background text-xs h-7"
+          >
+            <option value="updatedAt">Last Updated</option>
+            <option value="createdAt">Created Date</option>
+            <option value="title">Title</option>
+          </select>
+          <select
+            value={sortDirection}
+            onChange={(e) => setSortDirection(e.target.value as typeof sortDirection)}
+            className="p-1 border rounded-md bg-background text-xs h-7"
+          >
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
+        </div>
+      )}
 
       {/* Ontology Tag Filters Section */}
       <Collapsible className="border-b border-border">

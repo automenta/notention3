@@ -279,77 +279,65 @@ export function OntologyEditor() {
     setActiveId(event.active.id);
   };
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    setActiveId(null);
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldId = active.id as string;
-      const newParentCandidateId = over.id as string; // This is the ID of the item it was dropped ON
-
-      // Determine the actual new parent and position. This is complex for trees.
-      // For a simple list reorder or moving to a new parent (dropping ON a node makes it a child):
-      // This simplified logic assumes dropping ON a node makes the active node a child of the 'over' node.
-      // More sophisticated logic is needed for reordering within the same parent or changing order at root.
-
-      // For this iteration, let's assume we are trying to make 'active' a child of 'over'.
-      // Or, if 'over' is a placeholder for a "drop zone between items", that's different.
-      // The current `renderNode` structure implies items are directly sortable.
-      // A true tree D&D might require finding the new parent ID and the new index among siblings.
-
-      // Simplification: Let's assume for now we use OntologyService.moveNode which might have its own logic.
-      // We need to determine the `newParentId` and `position`.
-      // If `over.id` is a node, we might be making `active.id` its child.
-      // Or if `over.data.current.sortable.containerId` (if using complex drop zones) indicates a list.
-
-      let newOntologyTree = ontology;
-      const activeNodeData = ontology.nodes[oldId];
-      const overNodeData = ontology.nodes[newParentCandidateId]; // Node it was dropped on
-
-      if (!activeNodeData) return;
-
-      // Scenario 1: Reordering items (requires knowing the list of items being sorted)
-      // This is what SortableContext usually handles if items are flat or from the same parent.
-      // If we are moving between parents or changing hierarchy, it's more complex.
-
-      // Let's try a simplified approach: move the node to be a child of `overNodeData`.
-      // This is a common tree drag-and-drop pattern.
-      // More advanced: detect if dropping "between" items to reorder, or "on" items to reparent.
-      // @dnd-kit's collision detection can help here. `closestCenter` is simple.
-
-      // This logic is highly dependent on how `OntologyService.moveNode` expects its parameters
-      // and how the UI should behave.
-      // For now, we'll assume `moveNode` can take the target node ID as a potential new parent.
-      // A `position` would be harder to calculate without knowing the children of `newParentCandidateId`.
-
-      // Placeholder for actual move logic:
-      console.log(`Attempting to move ${oldId} potentially under ${newParentCandidateId}`);
-      // This is where you'd call OntologyService.moveNode with correctly determined newParentId and position
-      // For example: if dropping node A onto node B, node A becomes a child of node B.
-      // If node A is dropped between B and C (siblings), it reorders.
-
-      // This example assumes a flat list reorder for simplicity of demonstration with `arrayMove`
-      // A real tree needs more complex logic.
-      const items = Object.keys(ontology.nodes); // This is NOT the correct list for arrayMove in a tree
-      const oldIndex = items.indexOf(oldId);
-      const newIndex = items.indexOf(newParentCandidateId);
-
-      // This `arrayMove` is for a flat list. For a tree, you'd call OntologyService.moveNode
-      // with the correct new parentId and potentially an index.
-      // const reorderedNodes = arrayMove(items, oldIndex, newIndex);
-      // For now, let's assume we are moving `oldId` to become a child of `newParentCandidateId`
-
-      newOntologyTree = OntologyService.moveNode(ontology, oldId, newParentCandidateId);
-
-      // If using arrayMove for a flat list (demonstration only):
-      // const newRootIds = arrayMove(ontology.rootIds, oldIndex, newIndex); // Example if sorting rootIds
-      // newOntologyTree = { ...ontology, rootIds: newRootIds }; // Update based on arrayMove if applicable
-
-      await updateOntology(newOntologyTree);
-      setStoreOntology(newOntologyTree); // Update Zustand store
-      toast.success(`Moved "${activeNodeData.label}"`);
-    }
   }, [ontology, updateOntology, setStoreOntology]);
+
+  const handleExportOntology = () => {
+    if (!ontology || Object.keys(ontology.nodes).length === 0) {
+      toast.error("Ontology is empty. Nothing to export.");
+      return;
+    }
+    try {
+      const jsonString = OntologyService.exportToJSON(ontology);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `notention-ontology-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Ontology exported successfully!");
+    } catch (error) {
+      toast.error("Failed to export ontology.", { description: String(error) });
+    }
+  };
+
+  const handleImportOntology = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const jsonString = e.target?.result as string;
+        const importedOntology = OntologyService.importFromJSON(jsonString);
+        // Validate the imported ontology (OntologyService.validate could be used if more checks are needed)
+        if (!importedOntology || !importedOntology.nodes || !importedOntology.rootIds) {
+          throw new Error("Invalid ontology file structure.");
+        }
+
+        // Optional: Confirm overwrite if current ontology is not empty
+        if (Object.keys(ontology.nodes).length > 0) {
+          if (!window.confirm("This will replace your current ontology. Are you sure you want to proceed?")) {
+            // Reset file input so the same file can be selected again if needed
+            if (event.target) event.target.value = "";
+            return;
+          }
+        }
+
+        await updateOntology(importedOntology); // This should save to DB via store action
+        setStoreOntology(importedOntology); // Update store state
+        toast.success("Ontology imported successfully!");
+      } catch (error) {
+        toast.error("Failed to import ontology.", { description: String(error) });
+      } finally {
+        // Reset file input so the same file can be selected again if needed
+        if (event.target) event.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
 
 
   return (
@@ -365,11 +353,36 @@ export function OntologyEditor() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Ontology</h2>
             <div className="flex items-center gap-2">
-              {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
+             <div className="flex items-center gap-1"> {/* Reduced gap */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportOntology}
+                className="text-xs px-2 h-8" /* Smaller padding and height */
+              >
+                Export
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById('import-ontology-file')?.click()}
+                className="text-xs px-2 h-8"
+              >
+                Import
+              </Button>
+              <input
+                type="file"
+                id="import-ontology-file"
+                accept=".json"
+                onChange={handleImportOntology}
+                className="hidden"
+              />
+            </div>
+             {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
                 <Dialog open={isAISuggestionsDialogOpen} onOpenChange={setIsAISuggestionsDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <Sparkles size={16} className="mr-2" /> AI Suggest
+                  <Button size="sm" variant="outline" className="text-xs px-2 h-8">
+                    <Sparkles size={14} className="mr-1" /> AI Suggest
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md">
@@ -425,8 +438,8 @@ export function OntologyEditor() {
             )}
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm">
-                  <Plus size={16} /> Add Concept
+                <Button size="sm" className="text-xs px-2 h-8"> {/* Smaller padding and height */}
+                  <Plus size={14} className="mr-1" /> Add Concept {/* Smaller icon and margin */}
                 </Button>
               </DialogTrigger>
               <DialogContent>

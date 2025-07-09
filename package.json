@@ -106,6 +106,7 @@
     "@vitest/ui": "^1.6.0",
     "jsdom": "^24.1.0",
     "@testing-library/react": "^16.0.0",
-    "@testing-library/jest-dom": "^6.4.8"
+    "@testing-library/jest-dom": "^6.4.8",
+    "@playwright/test": "^1.45.3"
   }
 }

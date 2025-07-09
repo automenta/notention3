@@ -279,6 +279,92 @@ export function OntologyEditor() {
     setActiveId(event.active.id);
   };
 
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id) {
+      return; // No change or dropped on itself
+    }
+
+    const activeNodeId = active.id as string;
+    const overNodeId = over.id as string; // This could be a node ID or a droppable area ID
+
+    const activeNode = ontology.nodes[activeNodeId];
+    const overNode = ontology.nodes[overNodeId]; // Might be undefined if `over.id` is not a node ID
+
+    let newOntology = ontology;
+
+    // Scenario 1: Reordering within the same parent (or root)
+    // This is typically when `over.data.current.sortable.containerId` (if `over` is a sortable item)
+    // is the same as `active.data.current.sortable.containerId`.
+    // Or, if both `activeNode.parentId` and `overNode.parentId` are the same.
+
+    const oldParentId = activeNode.parentId;
+    const oldList = oldParentId ? ontology.nodes[oldParentId]?.children || [] : ontology.rootIds;
+    const oldIndex = oldList.indexOf(activeNodeId);
+
+    // Determine if it's a re-parenting operation or reordering
+    // A simple heuristic: if `overNodeId` is a node, and we are dropping "onto" it,
+    // it might mean making `activeNodeId` a child of `overNodeId`.
+    // If `overNodeId` is a sibling (same parent), it's reordering.
+
+    // For robust tree DnD, `over.data.current` might provide info about whether
+    // it's a drop target for re-parenting or just a sortable item for reordering.
+    // @dnd-kit/tree or custom logic would handle this more gracefully.
+    // For now, let's assume basic reordering first, then consider re-parenting.
+
+    // Attempt to find the parent of the 'over' node to determine if it's a sibling reorder
+    let targetParentId = overNode?.parentId;
+    let targetList = targetParentId ? ontology.nodes[targetParentId]?.children || [] : ontology.rootIds;
+    let newIndex = targetList.indexOf(overNodeId);
+
+    if (oldParentId === targetParentId) { // Reordering within the same list (siblings or root items)
+      if (oldIndex !== -1 && newIndex !== -1) {
+        newOntology = OntologyService.moveNode(ontology, activeNodeId, oldParentId, newIndex);
+      }
+    } else {
+      // This is a potential re-parenting or moving to/from root
+      // If `overNode` exists, we might be dropping ONTO it (making active a child of over)
+      // Or, if `overNodeId` represents a drop zone between items of a different parent.
+      // This part needs more sophisticated logic for a true tree DnD.
+      // Let's assume for now we are dropping ONTO overNode, making activeNode its child.
+      // A more complete solution would involve checking if `overNode` is a valid drop target
+      // and potentially its position (e.g. above, below, or on the item).
+
+      // Simplified re-parenting: make activeNode a child of overNodeId (if overNodeId is a node)
+      // Or, if overNodeId is not a node (e.g. a generic drop area for root), make it root.
+      if (overNode) { // Dropped onto another node, make it a child of overNode
+        newOntology = OntologyService.moveNode(ontology, activeNodeId, overNodeId, (overNode.children || []).length); // Add to end of children
+      } else {
+        // This case is tricky. `over.id` might not be a node.
+        // If `dnd-kit` is set up with droppable areas for "between items" or "root area",
+        // `over.id` would represent that. Without that setup, this might not work as expected.
+        // For a simple list-like reorder of roots, this might be okay if over.id is another root node.
+        // Let's assume if overNode is not found, it's potentially a drop to root or invalid.
+        // For now, if we can't determine a valid re-parenting or re-order, we do nothing.
+        // A true tree DnD would check if `over.id` is a droppable container for root items.
+
+        // Example: If we want to allow dropping to root, we'd need a root droppable area.
+        // For now, only allow reordering within existing lists or dropping onto a node to make it a child.
+        // If `overNode` is null, it means `over.id` was not a node.
+        // This could be a drop on the root container.
+        // Let's try to find the index in rootIds if over.id is a rootId
+        const overIsRootIndex = ontology.rootIds.indexOf(overNodeId);
+        if (overIsRootIndex !== -1 && activeNode.parentId !== undefined) { // Moving from child to root
+            newOntology = OntologyService.moveNode(ontology, activeNodeId, undefined, overIsRootIndex);
+        } else {
+            console.warn("Drag and drop target is not a valid node or position for re-parenting in this simplified setup.");
+            return; // Or handle specific drop zones
+        }
+      }
+    }
+
+    if (newOntology !== ontology) {
+      updateOntology(newOntology); // Persist via store action (which should call DB)
+      setStoreOntology(newOntology); // Update Zustand state
+      toast.success(`Ontology item '${activeNode.label}' moved.`);
+    }
   }, [ontology, updateOntology, setStoreOntology]);
 
   const handleExportOntology = () => {

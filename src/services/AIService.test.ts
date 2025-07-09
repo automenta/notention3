@@ -165,15 +165,182 @@ describe('AIService', () => {
     // Similar tests for getOntologySuggestions, getSummarization...
   });
 
+  describe('getEmbeddingVector', () => {
+    const mockOllamaEmbeddingsInstance = { embedQuery: vi.fn() };
+    const mockGeminiEmbeddingsInstance = { embedQuery: vi.fn() };
+
+    beforeEach(() => {
+      // Reset mocks for embedding instances
+      mockOllamaEmbeddingsInstance.embedQuery.mockReset();
+      mockGeminiEmbeddingsInstance.embedQuery.mockReset();
+
+      // Assuming OllamaEmbeddings and GoogleGenerativeAIEmbeddings are class modules,
+      // we mock their constructors to return our mock instances.
+      // This requires AIService to use `new OllamaEmbeddings()` etc.
+      // If AIService is already correctly structured (which it is), this should work.
+      // We need to mock the actual Langchain classes though.
+      // vi.mock('@langchain/community/embeddings/ollama', () => ({
+      //   OllamaEmbeddings: vi.fn(() => mockOllamaEmbeddingsInstance)
+      // }));
+      // vi.mock('@langchain/google-genai', async (importOriginal) => {
+      //   const original = await importOriginal();
+      //   return {
+      //     ...original, // Preserve ChatGoogleGenerativeAI etc.
+      //     GoogleGenerativeAIEmbeddings: vi.fn(() => mockGeminiEmbeddingsInstance)
+      //   };
+      // });
+      // The above mocks are tricky with how AIService instantiates them.
+      // For simplicity, we'll spy on the methods of the instances AIService creates.
+      // This requires AIService to have been initialized.
+    });
+
+    it('should return empty array if AI is disabled', async () => {
+      mockGetState.mockReturnValue({ userProfile: { preferences: { aiEnabled: false } } });
+      aiService.reinitializeModels(); // Reinitialize with AI disabled
+      const vector = await aiService.getEmbeddingVector("test text");
+      expect(vector).toEqual([]);
+    });
+
+    it('should call Ollama embedding model if preferred and configured', async () => {
+      mockGetState.mockReturnValue({
+        userProfile: {
+          preferences: {
+            aiEnabled: true,
+            ollamaApiEndpoint: 'http://localhost:11434',
+            ollamaEmbeddingModel: 'nomic-embed-text',
+            aiProviderPreference: 'ollama',
+            geminiApiKey: 'test-key', // Also configure Gemini to test preference
+          },
+        },
+      });
+      aiService.reinitializeModels(); // Reinitialize with new settings
+
+      // To properly test this, we need to spy on the `embedQuery` method of the
+      // `ollamaEmbeddings` instance within `aiService`.
+      // This is a bit white-boxy but necessary for this kind of test.
+      const ollamaEmbedSpy = vi.spyOn(aiService['ollamaEmbeddings']!, 'embedQuery');
+      ollamaEmbedSpy.mockResolvedValueOnce([0.1, 0.2, 0.3]);
+
+      const vector = await aiService.getEmbeddingVector("test text");
+      expect(ollamaEmbedSpy).toHaveBeenCalledWith("test text");
+      expect(vector).toEqual([0.1, 0.2, 0.3]);
+      ollamaEmbedSpy.mockRestore();
+    });
+
+    it('should call Gemini embedding model if preferred and configured', async () => {
+      mockGetState.mockReturnValue({
+        userProfile: {
+          preferences: {
+            aiEnabled: true,
+            geminiApiKey: 'test-gemini-key',
+            geminiEmbeddingModel: 'embedding-001',
+            aiProviderPreference: 'gemini',
+            ollamaApiEndpoint: 'http://localhost:11434', // Also configure Ollama
+          },
+        },
+      });
+      aiService.reinitializeModels();
+
+      const geminiEmbedSpy = vi.spyOn(aiService['geminiEmbeddings']!, 'embedQuery');
+      geminiEmbedSpy.mockResolvedValueOnce([0.4, 0.5, 0.6]);
+
+      const vector = await aiService.getEmbeddingVector("test text");
+      expect(geminiEmbedSpy).toHaveBeenCalledWith("test text");
+      expect(vector).toEqual([0.4, 0.5, 0.6]);
+      geminiEmbedSpy.mockRestore();
+    });
+
+    it('should fallback to Gemini if Ollama preferred but not configured, and Gemini is', async () => {
+        mockGetState.mockReturnValue({
+          userProfile: {
+            preferences: {
+              aiEnabled: true,
+              geminiApiKey: 'test-gemini-key',
+              geminiEmbeddingModel: 'embedding-001',
+              aiProviderPreference: 'ollama', // Prefer Ollama
+              ollamaApiEndpoint: '', // Ollama not configured
+            },
+          },
+        });
+        aiService.reinitializeModels();
+
+        const geminiEmbedSpy = vi.spyOn(aiService['geminiEmbeddings']!, 'embedQuery');
+        geminiEmbedSpy.mockResolvedValueOnce([0.4, 0.5, 0.6]);
+
+        const vector = await aiService.getEmbeddingVector("test text");
+        expect(geminiEmbedSpy).toHaveBeenCalledWith("test text");
+        expect(vector).toEqual([0.4, 0.5, 0.6]);
+        geminiEmbedSpy.mockRestore();
+      });
+
+    it('should return empty array if no embedding model is active', async () => {
+      mockGetState.mockReturnValue({
+        userProfile: {
+          preferences: {
+            aiEnabled: true,
+            ollamaApiEndpoint: '', // No Ollama
+            geminiApiKey: '',      // No Gemini
+          },
+        },
+      });
+      aiService.reinitializeModels();
+      const vector = await aiService.getEmbeddingVector("test text");
+      expect(vector).toEqual([]);
+    });
+
+    it('should handle errors from embedding model gracefully', async () => {
+      mockGetState.mockReturnValue({
+        userProfile: {
+          preferences: {
+            aiEnabled: true,
+            ollamaApiEndpoint: 'http://localhost:11434',
+            aiProviderPreference: 'ollama',
+          },
+        },
+      });
+      aiService.reinitializeModels();
+
+      const ollamaEmbedSpy = vi.spyOn(aiService['ollamaEmbeddings']!, 'embedQuery');
+      ollamaEmbedSpy.mockRejectedValueOnce(new Error("Embedding API Error"));
+
+      const vector = await aiService.getEmbeddingVector("test text");
+      expect(vector).toEqual([]);
+      expect(console.error).toHaveBeenCalledWith("Error getting embedding vector:", expect.any(Error));
+      ollamaEmbedSpy.mockRestore();
+    });
+  });
+
   // Test for reinitialization on store change (more complex to set up with singleton)
   it('should reinitialize models when relevant store preferences change', () => {
     // This would involve capturing the subscribe callback and triggering it.
-    // const subscribeCallback = mockSubscribe.mock.calls[0][0];
-    // const prevState = { userProfile: { preferences: { aiEnabled: false } } };
-    // const nextState = { userProfile: { preferences: { aiEnabled: true, ollamaApiEndpoint: 'http://test' } } };
-    // subscribeCallback(nextState, prevState);
-    // expect(Ollama).toHaveBeenCalledWith({ baseUrl: 'http://test', model: 'llama3' });
-    expect(true).toBe(true); // Placeholder
+    // For this test to be more robust, we'd need a way to inspect the internal
+    // state of aiService or mock the LangChain constructors more deeply.
+    // Given the current setup, we rely on the console log for a basic check or
+    // mock the individual model constructors if needed.
+
+    // Initial state: AI disabled
+    mockGetState.mockReturnValue({ userProfile: { preferences: { aiEnabled: false } } });
+    aiService.reinitializeModels(); // Call once to set initial state for subscribe
+
+    // Simulate store update
+    const subscribeCallback = (useAppStore.subscribe as vi.Mock).mock.calls[0][0];
+    const prevState = { userProfile: { preferences: { aiEnabled: false } } };
+    const nextState = { userProfile: { preferences: { aiEnabled: true, ollamaApiEndpoint: 'http://test-reinit', ollamaChatModel: 'test-chat', ollamaEmbeddingModel: 'test-embed' } } };
+
+    // Spy on console.log to check if reinitialization message is logged
+    const consoleLogSpy = vi.spyOn(console, 'log');
+    // Spy on the constructor or a method of Ollama to see if it's called with new settings
+    // This is difficult without deeper mocking of the Langchain classes themselves.
+    // For now, checking the log is an indirect way.
+
+    subscribeCallback(nextState, prevState);
+
+    expect(consoleLogSpy).toHaveBeenCalledWith("AI settings changed, reinitializing AI models.");
+    // Ideally, we'd also check if Ollama/Gemini instances were created with new settings.
+    // e.g., expect(Ollama).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://test-reinit' }));
+
+    consoleLogSpy.mockRestore();
+    expect(true).toBe(true); // Placeholder for the more complex assertion
   });
 
 });

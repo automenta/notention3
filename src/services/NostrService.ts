@@ -610,6 +610,41 @@ export class NostrService {
       return [];
     }
   }
+
+  /**
+   * Fetches Kind 5 (deletion) events authored by the current user.
+   * @param since Optional timestamp to fetch events after.
+   * @param targetRelays Optional relays.
+   * @returns Promise resolving with an array of Event objects.
+   */
+  public async fetchOwnDeletionEvents(since?: number, targetRelays?: string[]): Promise<Event[]> {
+    if (!this.isLoggedIn() || !this.publicKey) {
+      console.warn('User not logged in. Cannot fetch own deletion events.');
+      return [];
+    }
+
+    const relaysToUse = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToUse.length === 0) {
+      console.warn('No relays configured to fetch deletion events.');
+      return [];
+    }
+
+    const filters: Filter[] = [{
+      kinds: [5], // Kind 5 for Event Deletion
+      authors: [this.publicKey],
+      ...(since ? { since } : {})
+    }];
+
+    console.log(`Fetching own Kind 5 deletion events from ${relaysToUse.join(', ')} with filters:`, filters);
+    try {
+      const events = await this.pool.list(relaysToUse, filters);
+      // Sort by created_at descending to process more recent deletions first if needed, though order might not strictly matter.
+      return events.sort((a, b) => b.created_at - a.created_at);
+    } catch (error) {
+      console.error('Error fetching own deletion events:', error);
+      return [];
+    }
+  }
 }
 
 // Export a singleton instance

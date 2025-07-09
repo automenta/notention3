@@ -27,7 +27,7 @@ interface AppActions {
   
   // User profile actions
   updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>; // Allow partial updates
-  generateAndStoreNostrKeys: (privateKey?: string, publicKey?: string) => Promise<string | null>; // Added optional keys
+  generateAndStoreNostrKeys: (privateKey?: string, publicKey?: string) => Promise<{ publicKey: string | null; privateKey?: string }>; // Returns sk if newly generated
   logoutFromNostr: () => Promise<void>;
 
   // Folders actions
@@ -332,19 +332,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   deleteNote: async (id: string) => {
     const state = get();
-    const noteToDelete = state.notes[id];
+    // IMPORTANT: Fetch the note from DBService *before* deleting it locally from state or DB
+    // to ensure we have its nostrSyncEventId if it exists.
+    const noteToDelete = await DBService.getNote(id);
+    const nostrEventIdToDelete = noteToDelete?.nostrSyncEventId;
 
-    await NoteService.deleteNote(id); // This deletes from DBService
-    
+    // Perform local deletion from DB first
+    await NoteService.deleteNote(id); // This deletes from DBService via NoteService
+
+    // Update folder associations in the store if the note was in a folder
     if (noteToDelete && noteToDelete.folderId) {
-      // ... folder logic remains the same ...
       const folder = state.folders[noteToDelete.folderId];
       if (folder) {
         const updatedFolder = {
           ...folder,
-          noteIds: folder.noteIds.filter(noteId => noteId !== id),
+          noteIds: folder.noteIds.filter(nid => nid !== id),
           updatedAt: new Date()
         };
+        // Persist folder changes (NoteService.deleteNote doesn't handle folder updates)
+        // This might be better handled in FolderService or by having NoteService return folder updates
         await FolderService.updateFolder(folder.id, { noteIds: updatedFolder.noteIds });
         set(s => ({
           folders: { ...s.folders, [folder.id]: updatedFolder }
@@ -352,42 +358,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
 
+    // Update store state (remove note, clear currentNoteId if it was the deleted one)
     set(s => {
       const newNotes = { ...s.notes };
       delete newNotes[id];
       return {
         notes: newNotes,
         currentNoteId: s.currentNoteId === id ? undefined : s.currentNoteId,
+        editorContent: s.currentNoteId === id ? '' : s.editorContent, // Clear editor if current note deleted
+        isEditing: s.currentNoteId === id ? false : s.isEditing,
       };
     });
 
-    if (isOnline() && get().userProfile?.nostrPubkey) {
-      const noteToDeleteFromStore = get().notes[id];
-      const nostrEventIdToDelete = noteToDeleteFromStore?.nostrSyncEventId;
-
-      if (nostrEventIdToDelete) {
-        try {
-          await nostrService.publishDeletionEvent([nostrEventIdToDelete], "Note deleted by user.", get().userProfile?.nostrRelays || get().nostrRelays);
-          console.log(`Published Kind 5 deletion for Nostr event ID: ${nostrEventIdToDelete}`);
-          // No need to add to sync queue if deletion event published successfully
-          await DBService.removeNoteFromSyncQueue(id); // Ensure it's not in queue for 'save'
-        } catch (e) {
-          console.warn(`Failed to publish Kind 5 for event ${nostrEventIdToDelete}. Adding to sync queue for retry.`, e);
+    // Handle Nostr deletion event publishing
+    if (get().userProfile?.nostrPubkey) { // Check if user is logged in
+      if (nostrEventIdToDelete) { // Only publish Kind 5 if the note was previously synced
+        if (isOnline()) {
+          try {
+            await nostrService.publishDeletionEvent([nostrEventIdToDelete], "Note deleted by user.", get().userProfile?.nostrRelays || get().nostrRelays);
+            console.log(`Published Kind 5 deletion for Nostr event ID: ${nostrEventIdToDelete}`);
+            // If successfully published, ensure it's not in the queue for deletion retry
+            await DBService.removeNoteFromSyncQueue(id);
+          } catch (e) {
+            console.warn(`Failed to publish Kind 5 for event ${nostrEventIdToDelete}. Adding to sync queue for retry.`, e);
+            await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdToDelete });
+          }
+        } else { // Offline, but had a nostrEventId, so queue the deletion
+          console.log(`Offline: Queuing Kind 5 deletion for Nostr event ID: ${nostrEventIdToDelete}`);
           await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdToDelete });
         }
       } else {
-        // If there's no nostrSyncEventId, it means the note was never successfully synced.
-        // We can just mark it for local deletion from the queue if it's there.
-        console.log(`Note ${id} was likely never synced or had no sync ID. Marking for local delete from queue.`);
-        await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: undefined });
+        // Note was never synced (no nostrEventIdToDelete), so no Kind 5 to publish.
+        // However, if it was in the sync queue for 'save', that operation should be removed.
+        console.log(`Note ${id} was likely never synced or had no sync ID. Removing from save queue if present.`);
+        await DBService.removeNoteFromSyncQueue(id); // This will remove any pending 'save' or 'delete' op for this noteId.
       }
-      // Optionally, trigger a general sync to process queue if other items exist or if deletion failed and was queued.
-      // get().syncWithNostr();
     } else {
-      // Offline: queue the deletion. If we have the nostrSyncEventId, store it.
-      const noteStillInStore = get().notes[id]; // It might have been removed by set() already
-      const nostrEventIdForQueue = noteStillInStore?.nostrSyncEventId || (await DBService.getNote(id))?.nostrSyncEventId;
-      await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdForQueue });
+      // User not logged into Nostr, or no nostrEventIdToDelete.
+      // If there was a nostrEventId, but user is not logged in (e.g. keys cleared), still queue it.
+      if (nostrEventIdToDelete) {
+        console.log(`User not logged into Nostr or offline: Queuing Kind 5 deletion for Nostr event ID: ${nostrEventIdToDelete}`);
+        await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdToDelete });
+      } else {
+        // No Nostr presence and note was never synced. Just ensure it's not in queue.
+        await DBService.removeNoteFromSyncQueue(id);
+      }
     }
   },
 
@@ -744,15 +759,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     let skToStore: string;
     let pkToStore: string;
+    let newlyGeneratedSk: string | undefined = undefined;
 
     try {
-      if (providedSk && providedPk) {
+      if (providedSk) { // If a private key is provided, use it (and derive public key if not also provided)
         skToStore = providedSk;
-        pkToStore = providedPk;
-      } else {
-        const { privateKey, publicKey } = nostrService.generateNewKeyPair();
-        skToStore = privateKey;
-        pkToStore = publicKey;
+        pkToStore = providedPk || nostrService.getPublicKey(providedSk);
+        if (!pkToStore) { // Should not happen if sk is valid
+            throw new Error("Could not derive public key from provided private key.");
+        }
+      } else { // No private key provided, generate new ones
+        const { privateKey: newSk, publicKey: newPk } = nostrService.generateNewKeyPair();
+        skToStore = newSk;
+        pkToStore = newPk;
+        newlyGeneratedSk = newSk; // Mark that this sk was newly generated
       }
 
       await nostrService.storeKeyPair(skToStore, pkToStore);
@@ -786,10 +806,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         nostrRelays: userProfile.nostrRelays // Sync store's top-level relays
       });
       get().setError('network', undefined); // Clear previous errors
-      return pkToStore;
+      return { publicKey: pkToStore, privateKey: newlyGeneratedSk };
     } catch (error: any) {
       get().setError('network', `Failed to generate/store Nostr keys: ${error.message}`);
-      return null;
+      return { publicKey: null, privateKey: undefined };
     } finally {
       get().setLoading('network', false);
     }
@@ -1304,6 +1324,49 @@ export const useAppStore = create<AppStore>((set, get) => ({
       recordSyncTime(currentSyncTime); // Update last sync time
       // toast.success("Sync Complete", { id: "nostr-sync", description: "Data synced with Nostr relays." });
       console.log("Sync with Nostr complete.");
+
+      // 5. Fetch and process own Kind 5 deletion events (from other devices)
+      // Use the same 'since' timestamp as for fetching notes, or slightly earlier to be safe.
+      const remoteDeletionEvents = await nostrService.fetchOwnDeletionEvents(since, relays);
+      if (remoteDeletionEvents.length > 0) {
+        console.log(`Processing ${remoteDeletionEvents.length} remote deletion events.`);
+        const currentNotes = get().notes; // Get a snapshot of current notes
+        let notesWereDeleted = false;
+        for (const deletionEvent of remoteDeletionEvents) {
+          const eventIdsToDelete = deletionEvent.tags.filter(tag => tag[0] === 'e').map(tag => tag[1]);
+          for (const eventIdToDelete of eventIdsToDelete) {
+            // Find if any local note corresponds to this deleted event ID
+            const noteIdToDeleteLocally = Object.keys(currentNotes).find(
+              noteId => currentNotes[noteId]?.nostrSyncEventId === eventIdToDelete
+            );
+
+            if (noteIdToDeleteLocally) {
+              console.log(`Remote deletion event found for local note ID ${noteIdToDeleteLocally} (Nostr event ${eventIdToDelete}). Deleting locally.`);
+              await DBService.deleteNote(noteIdToDeleteLocally); // Delete from DB
+              // Update store state directly here as deleteNote action might try to publish another Kind 5
+              set(s => {
+                const newNotes = { ...s.notes };
+                delete newNotes[noteIdToDeleteLocally];
+                const newState: Partial<AppState> = { notes: newNotes };
+                if (s.currentNoteId === noteIdToDeleteLocally) {
+                  newState.currentNoteId = undefined;
+                  newState.editorContent = '';
+                  newState.isEditing = false;
+                }
+                return newState;
+              });
+              notesWereDeleted = true;
+              // Also ensure this note, if it was in the pending sync queue for deletion, is removed.
+              await DBService.removeNoteFromSyncQueue(noteIdToDeleteLocally);
+            }
+          }
+        }
+        if (notesWereDeleted) {
+          // Optional: Notify user or refresh specific UI parts if needed
+          console.log("Local notes deleted based on remote Kind 5 events.");
+        }
+      }
+
 
     } catch (error: any) {
       console.error('Nostr sync failed:', error);

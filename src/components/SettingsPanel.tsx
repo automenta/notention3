@@ -29,6 +29,13 @@ export function SettingsPanel() {
   const [importedNsec, setImportedNsec] = useState("");
   const [importKeyError, setImportKeyError] = useState<string | null>(null);
 
+  // State for displaying newly generated private key for backup
+  const [showNewSkBackupModal, setShowNewSkBackupModal] = useState(false);
+  const [newSkForBackup, setNewSkForBackup] = useState<string | null>(null);
+  const [newPkForBackupDisplay, setNewPkForBackupDisplay] = useState<string | null>(null);
+  const [newSkBackupConfirmed, setNewSkBackupConfirmed] = useState(false);
+  const [copiedNewSk, setCopiedNewSk] = useState(false);
+
 
   const handleExportData = async () => {
     const data = await DBService.exportData();
@@ -66,17 +73,51 @@ export function SettingsPanel() {
   };
 
   const handleGenerateKeypair = async () => {
-    if (confirm('This will generate a new Nostr keypair, replacing your current one if it exists. Your current private key will be overwritten in this app (though not deleted if you have it backed up elsewhere). You MUST back up the new private key immediately. Continue?')) {
-      const newPublicKey = await generateAndStoreNostrKeys(); // This now internally handles generation
-      if (newPublicKey) {
-        // The store's generateAndStoreNostrKeys does not return the private key for display here.
-        // This is a limitation if we want to show it. For settings, it's safer not to show it again.
-        alert(`New keypair generated and saved! Your new public key is: ${newPublicKey}. If this is your first time, ensure the private key (which was shown during initial generation if applicable) is backed up. This app does not show it again.`);
+    if (confirm('This will generate a new Nostr keypair, replacing your current one if it exists. Your current private key will be overwritten in this app. You MUST back up the new private key. Continue?')) {
+      const { publicKey, privateKey } = await generateAndStoreNostrKeys(); // No args means generate new
+      if (publicKey && privateKey) {
+        // New keys were generated, show modal for private key backup
+        setNewSkForBackup(privateKey);
+        setNewPkForBackupDisplay(publicKey);
+        setNewSkBackupConfirmed(false); // Reset confirmation
+        setCopiedNewSk(false);
+        setShowNewSkBackupModal(true);
+        // Toast or alert about public key can be shown after modal confirmation or here.
+        // For now, modal handles the critical private key part.
+      } else if (publicKey) {
+        // This case should ideally not happen if generateAndStoreNostrKeys always returns sk when new keys are made.
+        // It implies keys were somehow stored but sk wasn't returned (e.g. error or existing key logic if that were part of this path)
+        toast.success(`Nostr keys updated/verified. Public Key: ${publicKey.substring(0,10)}...`);
       } else {
-        alert('Failed to generate and store new keypair. Check console for errors.');
+        toast.error('Failed to generate and store new keypair.', { description: userProfile?.preferences.aiEnabled ? errors.network : "Check console for errors." });
       }
     }
   };
+
+  const handleConfirmNewSkBackup = () => {
+    if (!newSkBackupConfirmed) {
+      toast.error("Please check the box to confirm you've backed up the private key.");
+      return;
+    }
+    setShowNewSkBackupModal(false);
+    setNewSkForBackup(null);
+    setNewPkForBackupDisplay(null);
+    toast.success("New Nostr identity set up successfully!");
+    // The keys are already stored by generateAndStoreNostrKeys. This modal was just for backup UX.
+  };
+
+  const copyNewSkToClipboard = async () => {
+    if (newSkForBackup) {
+      try {
+        await navigator.clipboard.writeText(newSkForBackup);
+        setCopiedNewSk(true);
+        setTimeout(() => setCopiedNewSk(false), 2000);
+      } catch (err) {
+        toast.error('Failed to copy private key.');
+      }
+    }
+  };
+
 
   const handleOpenImportKeyModal = () => {
     setImportedNsec("");
@@ -649,6 +690,58 @@ export function SettingsPanel() {
           </DialogContent>
         </Dialog>
 
+        {/* Modal for Backing Up Newly Generated Private Key */}
+        {showNewSkBackupModal && newSkForBackup && newPkForBackupDisplay && (
+          <Dialog open={showNewSkBackupModal} onOpenChange={(open) => { if(!open) setShowNewSkBackupModal(false); /* Allow closing with Esc/overlay */ }}>
+            <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle>IMPORTANT: Back Up Your New Private Key</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <Alert variant="destructive">
+                  <Terminal className="h-4 w-4" />
+                  <AlertTitle>CRITICAL: Secure Your Private Key NOW!</AlertTitle>
+                  <AlertDescription>
+                    This is the <strong>ONLY</strong> time your new private key (nsec) will be shown.
+                    It is essential for accessing your Nostr identity and cannot be recovered if lost.
+                    Copy it and store it in a secure, secret place (e.g., password manager, offline storage).
+                  </AlertDescription>
+                </Alert>
+                <div>
+                  <Label htmlFor="newlyGeneratedPkDisplay">New Public Key (npub)</Label>
+                  <Input id="newlyGeneratedPkDisplay" value={newPkForBackupDisplay} readOnly className="font-mono text-xs mt-1"/>
+                </div>
+                <div>
+                  <Label htmlFor="newlyGeneratedSkDisplay">New Private Key (nsec)</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input id="newlyGeneratedSkDisplay" value={newSkForBackup} readOnly className="font-mono text-xs"/>
+                    <Button variant="outline" size="icon" onClick={copyNewSkToClipboard} title="Copy Private Key">
+                      {copiedNewSk ? <Check size={16} /> : <Copy size={16} />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2 mt-4">
+                  <Checkbox
+                    id="newSkBackupConfirmed"
+                    checked={newSkBackupConfirmed}
+                    onCheckedChange={(checked) => setNewSkBackupConfirmed(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="newSkBackupConfirmed"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    I have securely backed up my new private key.
+                  </label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleConfirmNewSkBackup} disabled={!newSkBackupConfirmed}>
+                  Confirm Backup & Continue
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </ScrollArea>
   );

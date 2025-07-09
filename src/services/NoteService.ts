@@ -1,8 +1,37 @@
-import { Note, OntologyTree, SearchFilters } from '../../shared/types'; // Added SearchFilters
+import { Note, OntologyTree, SearchFilters } from '../../shared/types';
 import { DBService } from './db';
 import { OntologyService } from './ontology';
+import { aiService } from './AIService'; // Import AIService
+import { useAppStore } from '../store'; // To access AI settings
 
 export class NoteService {
+  /**
+   * Calculates the cosine similarity between two vectors.
+   * @param vecA - The first vector.
+   * @param vecB - The second vector.
+   * @returns The cosine similarity, or 0 if inputs are invalid.
+   */
+  private static cosineSimilarity(vecA: number[], vecB: number[]): number {
+    if (!vecA || !vecB || vecA.length === 0 || vecA.length !== vecB.length) {
+      return 0;
+    }
+
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
   /**
    * Performs an enhanced search for notes, combining full-text search with structured filters.
    *
@@ -136,23 +165,44 @@ export class NoteService {
     await DBService.saveNote(noteToSave);
   }
 
+  private static async generateAndSetEmbedding(note: Note): Promise<Note> {
+    const { userProfile } = useAppStore.getState();
+    if (userProfile?.preferences.aiEnabled && aiService.isAIEnabled()) {
+      // Combine title and content for a richer embedding
+      const textToEmbed = `${note.title}\n${note.content}`;
+      if (textToEmbed.trim()) {
+        try {
+          const embedding = await aiService.getEmbeddingVector(textToEmbed);
+          if (embedding && embedding.length > 0) {
+            return { ...note, embedding };
+          }
+        } catch (error) {
+          console.error(`Failed to generate embedding for note ${note.id}:`, error);
+        }
+      }
+    }
+    // Return note without embedding or with previous embedding if generation failed
+    return { ...note, embedding: note.embedding || undefined };
+  }
+
   static async createNote(partialNote: Partial<Note>): Promise<Note> {
     const now = new Date();
-    const newNote: Note = {
-      // Default values from types.ts or sensible defaults
+    let newNote: Note = {
       id: `note-${new Date().getTime()}-${Math.random().toString(36).substring(2, 9)}`,
       title: 'Untitled Note',
       content: '',
       tags: [],
       values: {},
       fields: {},
-      status: 'draft', // Default status from types.ts
+      status: 'draft',
       createdAt: now,
       updatedAt: now,
       pinned: false,
       archived: false,
       ...partialNote,
     };
+
+    newNote = await this.generateAndSetEmbedding(newNote);
     await DBService.saveNote(newNote);
     return newNote;
   }
@@ -161,12 +211,62 @@ export class NoteService {
     const note = await DBService.getNote(id);
     if (!note) return null;
 
-    const updatedNote = { ...note, ...updates, updatedAt: new Date() };
+    let updatedNote = { ...note, ...updates, updatedAt: new Date() };
+
+    // Check if content or title changed to regenerate embedding
+    const contentChanged = 'content' in updates && updates.content !== note.content;
+    const titleChanged = 'title' in updates && updates.title !== note.title;
+
+    if (contentChanged || titleChanged) {
+      updatedNote = await this.generateAndSetEmbedding(updatedNote);
+    }
+
     await DBService.saveNote(updatedNote);
     return updatedNote;
   }
 
   static async deleteNote(id: string): Promise<void> {
     await DBService.deleteNote(id);
+  }
+
+  /**
+   * Finds notes similar to a given note based on embedding vectors.
+   * @param targetNote - The note to find similar matches for.
+   * @param allNotes - An array of all notes to search within.
+   * @param similarityThreshold - The minimum cosine similarity score to consider a match.
+   * @returns A promise that resolves to an array of matched notes, sorted by similarity.
+   */
+  static async findSimilarNotesByEmbedding(
+    targetNote: Note,
+    allNotes: Note[],
+    similarityThreshold: number = 0.7 // Default threshold
+  ): Promise<Array<{ note: Note; similarity: number }>> {
+    if (!targetNote.embedding || targetNote.embedding.length === 0) {
+      return []; // Cannot find similar notes if the target has no embedding
+    }
+
+    const { userProfile } = useAppStore.getState();
+    if (!userProfile?.preferences.aiEnabled) {
+        return []; // AI features must be enabled
+    }
+
+    const similarNotes: Array<{ note: Note; similarity: number }> = [];
+
+    for (const note of allNotes) {
+      if (note.id === targetNote.id || !note.embedding || note.embedding.length === 0) {
+        continue; // Skip self or notes without embeddings
+      }
+
+      const similarity = this.cosineSimilarity(targetNote.embedding, note.embedding);
+
+      if (similarity >= similarityThreshold) {
+        similarNotes.push({ note, similarity });
+      }
+    }
+
+    // Sort by similarity in descending order
+    similarNotes.sort((a, b) => b.similarity - a.similarity);
+
+    return similarNotes;
   }
 }

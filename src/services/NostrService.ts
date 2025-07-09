@@ -374,23 +374,27 @@ export class NostrService {
     const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
     if (relaysToPublish.length === 0) {
       console.warn('No relays configured or provided to publish note for sync.');
-      return [];
+      return []; // Return empty array, not just eventId
     }
 
     console.log(`Publishing note for sync to ${relaysToPublish.join(', ')}:`, signedEvent);
+    // Store the signedEvent.id with the note (this should be done by the caller, e.g., in the store)
+    // For now, we just return the event ID.
+
     try {
       const publicationPromises = this.pool.publish(relaysToPublish, signedEvent);
       const results = await Promise.allSettled(publicationPromises);
-      const successfulEventIds: string[] = [];
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          console.log(`Sync Event ${signedEvent.id} published successfully to ${relaysToPublish[index]}`);
-          successfulEventIds.push(signedEvent.id);
-        } else {
-          console.error(`Failed to publish sync event ${signedEvent.id} to ${relaysToPublish[index]}:`, result.reason);
-        }
-      });
-      return successfulEventIds;
+      const successfulRelaysCount = results.filter(r => r.status === 'fulfilled').length;
+
+      if (successfulRelaysCount > 0) {
+        console.log(`Sync Event ${signedEvent.id} published successfully to ${successfulRelaysCount} relay(s).`);
+        // Return the event ID if published to at least one relay.
+        // The caller (store) will be responsible for updating the note with this ID.
+        return [signedEvent.id]; // Returning an array containing the ID for consistency, though it's one event.
+      } else {
+        console.error(`Failed to publish sync event ${signedEvent.id} to any relay.`);
+        return [];
+      }
     } catch (error) {
       console.error('Error during sync note pool.publish:', error);
       return [];
@@ -550,6 +554,60 @@ export class NostrService {
     } catch (error) {
       console.error(`Error fetching event ${eventId}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Publishes a Kind 5 Event Deletion event.
+   * @param eventIdsToMarkForDeletion Array of event IDs (strings) to be deleted.
+   * @param reason Optional reason for deletion.
+   * @param targetRelays Optional relays to publish to.
+   * @returns Promise resolving with event IDs from relays where deletion event was published.
+   */
+  public async publishDeletionEvent(
+    eventIdsToMarkForDeletion: string[],
+    reason: string = "",
+    targetRelays?: string[]
+  ): Promise<string[]> {
+    if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
+      throw new Error('User not logged in. Cannot publish deletion event.');
+    }
+    if (!eventIdsToMarkForDeletion || eventIdsToMarkForDeletion.length === 0) {
+      console.warn('No event IDs provided for deletion.');
+      return [];
+    }
+
+    const tags = eventIdsToMarkForDeletion.map(id => ['e', id]);
+    if (reason) {
+      tags.push(['reason', reason]);
+    }
+
+    const unsignedEvent: UnsignedEvent = {
+      kind: 5, // Event Deletion
+      pubkey: this.publicKey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: tags,
+      content: reason, // NIP-09 suggests reason can be in content if not in tags.
+    };
+
+    const eventId = getEventHash(unsignedEvent);
+    const signature = signEvent(unsignedEvent, this.privateKey);
+    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+
+    const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
+    if (relaysToPublish.length === 0) {
+      console.warn('No relays for deletion event.');
+      return [];
+    }
+
+    console.log(`Publishing Kind 5 deletion event for IDs: ${eventIdsToMarkForDeletion.join(', ')} to ${relaysToPublish.join(', ')}:`, signedEvent);
+    try {
+      const pubPromises = this.pool.publish(relaysToPublish, signedEvent);
+      const results = await Promise.allSettled(pubPromises);
+      return results.filter(r => r.status === 'fulfilled').map(() => signedEvent.id);
+    } catch (error) {
+      console.error('Error during Kind 5 deletion event pool.publish:', error);
+      return [];
     }
   }
 }

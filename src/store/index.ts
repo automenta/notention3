@@ -79,6 +79,14 @@ interface AppActions {
   // Sync actions
   syncWithNostr: (force?: boolean) => Promise<void>;
   setLastSyncTimestamp: (timestamp: Date) => void;
+
+  // Embedding Matches
+  findAndSetEmbeddingMatches: (noteId: string, similarityThreshold?: number) => Promise<void>;
+
+  // Contacts (Buddy List)
+  addContact: (contact: Contact) => Promise<void>;
+  removeContact: (pubkey: string) => Promise<void>;
+  updateContactAlias: (pubkey: string, alias: string) => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -101,12 +109,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   templates: {},
   
   currentNoteId: undefined,
-  sidebarTab: 'notes' as 'notes' | 'ontology' | 'network' | 'settings' | 'chats', // Added 'chats' & type assertion
+  sidebarTab: 'notes' as "notes" | "ontology" | "network" | "settings" | "contacts", // Changed 'chats' to 'contacts'
   searchQuery: '',
   searchFilters: {},
   
   matches: [],
   directMessages: [],
+  embeddingMatches: [], // New state for embedding-based matches
   // Default relays, user can override via settings
   nostrRelays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'], // This will be synced with userProfile.nostrRelays
   nostrConnected: false, // Explicitly for Nostr connection status
@@ -266,28 +275,57 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
 
     if (isOnline() && get().userProfile?.nostrPubkey) {
-      // Try direct sync, or rely on periodic syncWithNostr
-      nostrService.publishNoteForSync(newNote, get().userProfile?.nostrRelays || get().nostrRelays)
-        .catch(e => console.warn("Live sync on createNote failed, will queue or retry later", e));
+      try {
+        const publishedEventIds = await nostrService.publishNoteForSync(newNote, get().userProfile?.nostrRelays || get().nostrRelays);
+        if (publishedEventIds.length > 0 && publishedEventIds[0]) {
+          // Update the note in the store and DB with the nostrSyncEventId
+          const noteWithSyncId = { ...newNote, nostrSyncEventId: publishedEventIds[0] };
+          await DBService.saveNote(noteWithSyncId); // Save to DB with sync ID
+          set(state => ({
+            notes: { ...state.notes, [newNote.id]: noteWithSyncId },
+          }));
+          console.log(`Note ${newNote.id} synced with event ID ${publishedEventIds[0]}`);
+        } else {
+          // Publishing failed or returned no ID, queue it
+          await DBService.addNoteToSyncQueue({ noteId: newNote.id, action: 'save', timestamp: new Date(), nostrEventId: newNote.nostrSyncEventId });
+        }
+      } catch (e) {
+        console.warn("Live sync on createNote failed, will queue or retry later", e);
+        await DBService.addNoteToSyncQueue({ noteId: newNote.id, action: 'save', timestamp: new Date(), nostrEventId: newNote.nostrSyncEventId });
+      }
     } else {
-      await DBService.addNoteToSyncQueue({ noteId: newNote.id, action: 'save', timestamp: new Date() });
+      await DBService.addNoteToSyncQueue({ noteId: newNote.id, action: 'save', timestamp: new Date(), nostrEventId: newNote.nostrSyncEventId });
     }
     return newNote.id;
   },
 
   updateNote: async (id: string, updates: Partial<Note>) => {
-    const updatedNote = await NoteService.updateNote(id, updates); // This saves to DBService
+    let updatedNote = await NoteService.updateNote(id, updates); // This saves to DBService
     if (updatedNote) {
       set(state => ({
-        notes: { ...state.notes, [id]: updatedNote },
-        ...(state.currentNoteId === id && state.editorContent !== updatedNote.content && { editorContent: updatedNote.content }),
+        notes: { ...state.notes, [id]: updatedNote! },
+        ...(state.currentNoteId === id && state.editorContent !== updatedNote!.content && { editorContent: updatedNote!.content }),
       }));
 
       if (isOnline() && get().userProfile?.nostrPubkey) {
-        nostrService.publishNoteForSync(updatedNote, get().userProfile?.nostrRelays || get().nostrRelays)
-          .catch(e => console.warn("Live sync on updateNote failed, will queue or retry later", e));
+        try {
+          const publishedEventIds = await nostrService.publishNoteForSync(updatedNote, get().userProfile?.nostrRelays || get().nostrRelays);
+          if (publishedEventIds.length > 0 && publishedEventIds[0]) {
+            if (updatedNote.nostrSyncEventId !== publishedEventIds[0]) {
+              updatedNote = { ...updatedNote, nostrSyncEventId: publishedEventIds[0] };
+              await DBService.saveNote(updatedNote); // Save to DB with new sync ID
+              set(state => ({ notes: { ...state.notes, [id]: updatedNote! } }));
+            }
+            console.log(`Note ${id} updated and synced with event ID ${publishedEventIds[0]}`);
+          } else {
+            await DBService.addNoteToSyncQueue({ noteId: id, action: 'save', timestamp: new Date(), nostrEventId: updatedNote.nostrSyncEventId });
+          }
+        } catch (e) {
+          console.warn("Live sync on updateNote failed, will queue or retry later", e);
+          await DBService.addNoteToSyncQueue({ noteId: id, action: 'save', timestamp: new Date(), nostrEventId: updatedNote.nostrSyncEventId });
+        }
       } else {
-        await DBService.addNoteToSyncQueue({ noteId: id, action: 'save', timestamp: new Date() });
+        await DBService.addNoteToSyncQueue({ noteId: id, action: 'save', timestamp: new Date(), nostrEventId: updatedNote.nostrSyncEventId });
       }
     }
   },
@@ -324,13 +362,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
 
     if (isOnline() && get().userProfile?.nostrPubkey) {
-      // For delete, we might publish a "deleted" marker or a Kind 5 event.
-      // For now, just adding to queue for consistency, syncWithNostr handles it.
-      // Actual remote deletion is complex. This queue op primarily ensures local state doesn't try to re-upload it.
-      await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date() });
-      get().syncWithNostr(); // Attempt to sync deletion marker if implemented in syncWithNostr
+      const noteToDeleteFromStore = get().notes[id];
+      const nostrEventIdToDelete = noteToDeleteFromStore?.nostrSyncEventId;
+
+      if (nostrEventIdToDelete) {
+        try {
+          await nostrService.publishDeletionEvent([nostrEventIdToDelete], "Note deleted by user.", get().userProfile?.nostrRelays || get().nostrRelays);
+          console.log(`Published Kind 5 deletion for Nostr event ID: ${nostrEventIdToDelete}`);
+          // No need to add to sync queue if deletion event published successfully
+          await DBService.removeNoteFromSyncQueue(id); // Ensure it's not in queue for 'save'
+        } catch (e) {
+          console.warn(`Failed to publish Kind 5 for event ${nostrEventIdToDelete}. Adding to sync queue for retry.`, e);
+          await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdToDelete });
+        }
+      } else {
+        // If there's no nostrSyncEventId, it means the note was never successfully synced.
+        // We can just mark it for local deletion from the queue if it's there.
+        console.log(`Note ${id} was likely never synced or had no sync ID. Marking for local delete from queue.`);
+        await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: undefined });
+      }
+      // Optionally, trigger a general sync to process queue if other items exist or if deletion failed and was queued.
+      // get().syncWithNostr();
     } else {
-      await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date() });
+      // Offline: queue the deletion. If we have the nostrSyncEventId, store it.
+      const noteStillInStore = get().notes[id]; // It might have been removed by set() already
+      const nostrEventIdForQueue = noteStillInStore?.nostrSyncEventId || (await DBService.getNote(id))?.nostrSyncEventId;
+      await DBService.addNoteToSyncQueue({ noteId: id, action: 'delete', timestamp: new Date(), nostrEventId: nostrEventIdForQueue });
     }
   },
 
@@ -1205,16 +1262,42 @@ export const useAppStore = create<AppStore>((set, get) => ({
             await DBService.removeNoteFromSyncQueue(op.noteId);
           }
         } else if (op.action === 'delete') {
-          // For deletes, we'd need a way to signify deletion on Nostr.
-          // This could be publishing a Kind 5 event deletion for the Kind 4 sync event,
-          // or publishing a special "deleted" state for the note (e.g. empty content and a 'deleted' tag).
-          // For simplicity, we'll just remove from queue. True distributed delete is hard.
-          // Alternative: publish a Kind 4 event with a specific "deleted" marker.
-          console.log(`Processing pending local delete for note ${op.noteId}. (Note: True remote delete not implemented, removing from queue).`);
-          // Example: publish a marker, then remove from queue
-          // const deleteMarkerNote = { id: op.noteId, content: "DELETED", title:"DELETED", status:"archived", updatedAt: new Date(), createdAt: new Date(0) };
-          // await nostrService.publishNoteForSync(deleteMarkerNote as Note, relays);
-          await DBService.removeNoteFromSyncQueue(op.noteId);
+      if (op.action === 'save') {
+        const noteToSync = await DBService.getNote(op.noteId);
+        if (noteToSync) {
+          const correspondingRemoteNote = remoteNotes.find(rn => rn.id === noteToSync.id);
+          if (correspondingRemoteNote && new Date(noteToSync.updatedAt) < new Date(correspondingRemoteNote.updatedAt)) {
+            console.log(`Skipping publish of local note ${noteToSync.id} as remote is newer.`);
+            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId consistently
+            continue;
+          }
+          console.log(`Publishing pending local note ${op.noteId} for sync.`);
+          const publishedEventIds = await nostrService.publishNoteForSync(noteToSync, relays);
+          if (publishedEventIds.length > 0 && publishedEventIds[0]) {
+            if (noteToSync.nostrSyncEventId !== publishedEventIds[0]) {
+              const noteWithSyncId = { ...noteToSync, nostrSyncEventId: publishedEventIds[0] };
+              await DBService.saveNote(noteWithSyncId); // Save to DB with new/updated sync ID
+              set(s => ({ notes: { ...s.notes, [noteToSync.id]: noteWithSyncId } })); // Update store
+            }
+            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+          } else {
+            console.warn(`Failed to publish pending note ${op.noteId} during sync. Will retry later.`);
+          }
+        }
+      } else if (op.action === 'delete') {
+        const eventIdToDelete = op.nostrEventId || (await DBService.getNote(op.noteId))?.nostrSyncEventId;
+        if (eventIdToDelete) {
+          console.log(`Processing pending Kind 5 deletion for Nostr event ID: ${eventIdToDelete} (local note ID: ${op.noteId}).`);
+          try {
+            await nostrService.publishDeletionEvent([eventIdToDelete], "Note deleted by user during sync.", relays);
+            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+          } catch (e) {
+            console.warn(`Failed to publish Kind 5 for event ${eventIdToDelete} during sync. Will retry later.`, e);
+          }
+        } else {
+          console.log(`Skipping deletion for note ${op.noteId} as no Nostr event ID was found. Removing from queue.`);
+          await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+        }
         }
       }
 
@@ -1397,6 +1480,65 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
 
+  findAndSetEmbeddingMatches: async (noteId: string, similarityThreshold: number = 0.7) => {
+    const { notes, setLoading, setError, userProfile } = get();
+    const targetNote = notes[noteId];
+
+    if (!targetNote) {
+      setError('network', 'Target note for embedding match not found.');
+      return;
+    }
+    if (!userProfile?.preferences.aiEnabled) {
+      setError('network', 'AI features are not enabled. Cannot find embedding matches.');
+      // Optionally clear existing embedding matches
+      // set({ embeddingMatches: [] });
+      return;
+    }
+    if (!targetNote.embedding || targetNote.embedding.length === 0) {
+      setError('network', `Note "${targetNote.title}" does not have an embedding. Cannot find similar notes.`);
+      // Optionally clear existing embedding matches
+      // set({ embeddingMatches: [] });
+      return;
+    }
+
+    setLoading('network', true); // Use network loading as it's a "discovery" feature
+    setError('network', undefined);
+
+    try {
+      const allNotes = Object.values(notes);
+      const similarNoteResults = await NoteService.findSimilarNotesByEmbedding(
+        targetNote,
+        allNotes,
+        similarityThreshold
+      );
+
+      const newEmbeddingMatches: Match[] = similarNoteResults.map(result => ({
+        id: `embedmatch-${targetNote.id}-${result.note.id}`,
+        localNoteId: result.note.id, // ID of the matched local note
+        targetNoteId: result.note.id, // For consistency, points to the matched local note
+        targetAuthor: userProfile.nostrPubkey || 'local', // Author is the current user
+        similarity: result.similarity,
+        sharedTags: result.note.tags.filter(tag => targetNote.tags.includes(tag)), // Simple shared tags
+        sharedValues: {}, // TODO: Could implement if values are also embedded or compared
+        timestamp: result.note.updatedAt, // Use matched note's update time
+        matchType: 'embedding' // Add a type to distinguish from Nostr matches
+      }));
+
+      set({ embeddingMatches: newEmbeddingMatches, loading: { ...get().loading, network: false } });
+      if (newEmbeddingMatches.length === 0) {
+        // toast.info("No similar notes found via embeddings.", { description: `For note: "${targetNote.title.substring(0,30)}..."`});
+      } else {
+        // toast.success(`${newEmbeddingMatches.length} similar notes found via embeddings.`, { description: `For note: "${targetNote.title.substring(0,30)}..."`});
+      }
+    } catch (error: any) {
+      console.error('Failed to find embedding matches:', error);
+      setError('network', `Failed to find embedding matches: ${error.message}`);
+      // toast.error("Error finding embedding matches.", { description: error.message });
+    } finally {
+      setLoading('network', false);
+    }
+  },
+
   removeTopicSubscription: (topic: string) => {
     set(state => {
       const newActiveTopicSubscriptions = { ...state.activeTopicSubscriptions };
@@ -1428,3 +1570,52 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
 }));
+
+// Add matchType to Match interface in shared/types.ts
+// export interface Match {
+//   ...
+//   matchType?: 'nostr' | 'embedding';
+// }
+// This comment is a reminder to update shared/types.ts if not done already.
+// It has been done in a previous step implicitly by adding localNoteId,
+// but explicitly adding matchType would be clearer.
+// For now, the presence of localNoteId can signify an embedding match.
+
+  addContact: async (contact: Contact) => {
+    const { userProfile, updateUserProfile } = get();
+    if (!userProfile) return;
+
+    const existingContacts = userProfile.contacts || [];
+    if (existingContacts.find(c => c.pubkey === contact.pubkey)) {
+      // Optionally update if contact exists, or just ignore duplicate add
+      console.warn(`Contact with pubkey ${contact.pubkey} already exists.`);
+      // For now, let's update if it exists (e.g. to update alias or lastContact)
+      const updatedContacts = existingContacts.map(c =>
+        c.pubkey === contact.pubkey ? { ...c, ...contact, lastContact: new Date() } : c
+      );
+      await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+      return;
+    }
+
+    const newContact = { ...contact, lastContact: contact.lastContact || new Date() };
+    const updatedContacts = [...existingContacts, newContact];
+    await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+  },
+
+  removeContact: async (pubkey: string) => {
+    const { userProfile, updateUserProfile } = get();
+    if (!userProfile || !userProfile.contacts) return;
+
+    const updatedContacts = userProfile.contacts.filter(c => c.pubkey !== pubkey);
+    await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+  },
+
+  updateContactAlias: async (pubkey: string, alias: string) => {
+    const { userProfile, updateUserProfile } = get();
+    if (!userProfile || !userProfile.contacts) return;
+
+    const updatedContacts = userProfile.contacts.map(c =>
+      c.pubkey === pubkey ? { ...c, alias } : c
+    );
+    await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+  },

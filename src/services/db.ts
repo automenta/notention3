@@ -63,6 +63,7 @@ export interface SyncQueueNoteOp {
   noteId: string;
   action: 'save' | 'delete'; // 'save' implies create or update
   timestamp: Date; // Timestamp of the operation
+  nostrEventId?: string; // The ID of the Nostr event (e.g., Kind 4 for note, or the event to be deleted by Kind 5)
 }
 
 const ONTOLOGY_NEEDS_SYNC_KEY = 'ontology_needs_sync';

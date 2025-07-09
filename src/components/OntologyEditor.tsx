@@ -1,7 +1,27 @@
-import { useState, useMemo } from "react";
-import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Sparkles, Wand2 } from "lucide-react"; // Added Sparkles, Wand2
+import { useState, useMemo, useCallback } from "react";
+import { Hash, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Sparkles, Wand2, GripVertical } from "lucide-react"; // Added Sparkles, Wand2, GripVertical
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  UniqueIdentifier,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Textarea } from "./ui/textarea"; // Added Textarea
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
@@ -25,7 +45,12 @@ export function OntologyEditor() {
   const [isFetchingAISuggestions, setIsFetchingAISuggestions] = useState(false);
 
 
-  // State for adding a new node
+  // Drag and Drop State
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null); // ID of the currently dragged item
+  const activeNode = useMemo(() => activeId ? ontology.nodes[activeId as string] : null, [activeId, ontology.nodes]);
+
+
+  // State for adding/editing node dialogs
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newNodeLabel, setNewNodeLabel] = useState("");
   const [newNodeParentId, setNewNodeParentId] = useState<string | undefined>();
@@ -35,7 +60,7 @@ export function OntologyEditor() {
   const [editNodeLabel, setEditNodeLabel] = useState("");
   const [editNodeAttributes, setEditNodeAttributes] = useState<{[key: string]: string}>({});
 
-  /* // Temporarily comment out handlers
+  // Handlers for node operations, AI suggestions etc.
   const handleOpenEditDialog = (node: OntologyNode) => {
     setEditingNode(node);
     setEditNodeLabel(node.label);
@@ -157,38 +182,55 @@ export function OntologyEditor() {
       toast.error("Failed to add suggested node.", { description: error.message });
     }
   };
-  */
 
-  /*
-  const renderNode = (node: OntologyNode, level: number = 0) => {
+  // Recursive function to render nodes
+  const renderNode = (node: OntologyNode, level: number = 0): JSX.Element => {
+    const {
+      attributes: dndAttributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: node.id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+      paddingLeft: `${level * 20 + 8}px`, // Indentation based on level
+    };
+
     const children = getChildNodes(node.id);
     const hasChildren = children.length > 0;
     const isExpanded = expandedNodes.has(node.id);
 
     return (
-      <div key={node.id} className="mb-1">
+      <div ref={setNodeRef} style={style} className="mb-1 bg-card group" {...dndAttributes}>
         <div 
-          className="flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer"
-          style={{ paddingLeft: `${level * 16 + 8}px` }}
+          className={`flex items-center gap-1 p-2 rounded hover:bg-accent ${isDragging ? 'shadow-lg' : ''}`}
         >
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 cursor-grab group-hover:opacity-100 opacity-25" {...listeners}>
+            <GripVertical size={14} />
+          </Button>
           {hasChildren ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0"
-              onClick={() => toggleExpanded(node.id)}
+              onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id); }}
             >
               {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </Button>
           ) : (
-            <div className="w-6" />
+            <div className="w-6" /> // Placeholder for alignment
           )}
 
-          <Badge variant="outline" className="text-xs cursor-default">
+          <Badge variant="outline" className="text-xs cursor-default truncate max-w-xs">
             {node.label}
           </Badge>
           {node.attributes && Object.keys(node.attributes).length > 0 && (
-            <Badge variant="secondary" className="text-xs ml-1 cursor-default">
+            <Badge variant="secondary" className="text-xs ml-1 cursor-default truncate max-w-xs hidden sm:inline-block">
               {Object.entries(node.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}
             </Badge>
           )}
@@ -198,7 +240,7 @@ export function OntologyEditor() {
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0"
-              onClick={() => handleOpenEditDialog(node)}
+              onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(node);}}
             >
               <Edit2 size={12} />
             </Button>
@@ -206,7 +248,7 @@ export function OntologyEditor() {
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0 text-destructive"
-              onClick={() => handleDeleteNode(node.id)}
+              onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id);}}
             >
               <Trash2 size={12} />
             </Button>
@@ -214,23 +256,117 @@ export function OntologyEditor() {
         </div>
 
         {hasChildren && isExpanded && (
-          <div>
-            {children.map(child => renderNode(child, level + 1))}
+          <div className="pl-0"> {/* No extra padding here, parent div controls it */}
+            {/* For SortableContext with children, ensure items are direct descendants or manage IDs carefully */}
+            {/* This basic SortableContext might need adjustment for nested D&D if children are also sortable independently */}
+            <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
+              {children.map(child => renderNode(child, level + 1))}
+            </SortableContext>
           </div>
         )}
       </div>
     );
   };
-  */
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldId = active.id as string;
+      const newParentCandidateId = over.id as string; // This is the ID of the item it was dropped ON
+
+      // Determine the actual new parent and position. This is complex for trees.
+      // For a simple list reorder or moving to a new parent (dropping ON a node makes it a child):
+      // This simplified logic assumes dropping ON a node makes the active node a child of the 'over' node.
+      // More sophisticated logic is needed for reordering within the same parent or changing order at root.
+
+      // For this iteration, let's assume we are trying to make 'active' a child of 'over'.
+      // Or, if 'over' is a placeholder for a "drop zone between items", that's different.
+      // The current `renderNode` structure implies items are directly sortable.
+      // A true tree D&D might require finding the new parent ID and the new index among siblings.
+
+      // Simplification: Let's assume for now we use OntologyService.moveNode which might have its own logic.
+      // We need to determine the `newParentId` and `position`.
+      // If `over.id` is a node, we might be making `active.id` its child.
+      // Or if `over.data.current.sortable.containerId` (if using complex drop zones) indicates a list.
+
+      let newOntologyTree = ontology;
+      const activeNodeData = ontology.nodes[oldId];
+      const overNodeData = ontology.nodes[newParentCandidateId]; // Node it was dropped on
+
+      if (!activeNodeData) return;
+
+      // Scenario 1: Reordering items (requires knowing the list of items being sorted)
+      // This is what SortableContext usually handles if items are flat or from the same parent.
+      // If we are moving between parents or changing hierarchy, it's more complex.
+
+      // Let's try a simplified approach: move the node to be a child of `overNodeData`.
+      // This is a common tree drag-and-drop pattern.
+      // More advanced: detect if dropping "between" items to reorder, or "on" items to reparent.
+      // @dnd-kit's collision detection can help here. `closestCenter` is simple.
+
+      // This logic is highly dependent on how `OntologyService.moveNode` expects its parameters
+      // and how the UI should behave.
+      // For now, we'll assume `moveNode` can take the target node ID as a potential new parent.
+      // A `position` would be harder to calculate without knowing the children of `newParentCandidateId`.
+
+      // Placeholder for actual move logic:
+      console.log(`Attempting to move ${oldId} potentially under ${newParentCandidateId}`);
+      // This is where you'd call OntologyService.moveNode with correctly determined newParentId and position
+      // For example: if dropping node A onto node B, node A becomes a child of node B.
+      // If node A is dropped between B and C (siblings), it reorders.
+
+      // This example assumes a flat list reorder for simplicity of demonstration with `arrayMove`
+      // A real tree needs more complex logic.
+      const items = Object.keys(ontology.nodes); // This is NOT the correct list for arrayMove in a tree
+      const oldIndex = items.indexOf(oldId);
+      const newIndex = items.indexOf(newParentCandidateId);
+
+      // This `arrayMove` is for a flat list. For a tree, you'd call OntologyService.moveNode
+      // with the correct new parentId and potentially an index.
+      // const reorderedNodes = arrayMove(items, oldIndex, newIndex);
+      // For now, let's assume we are moving `oldId` to become a child of `newParentCandidateId`
+
+      newOntologyTree = OntologyService.moveNode(ontology, oldId, newParentCandidateId);
+
+      // If using arrayMove for a flat list (demonstration only):
+      // const newRootIds = arrayMove(ontology.rootIds, oldIndex, newIndex); // Example if sorting rootIds
+      // newOntologyTree = { ...ontology, rootIds: newRootIds }; // Update based on arrayMove if applicable
+
+      await updateOntology(newOntologyTree);
+      setStoreOntology(newOntologyTree); // Update Zustand store
+      toast.success(`Moved "${activeNodeData.label}"`);
+    }
+  }, [ontology, updateOntology, setStoreOntology]);
+
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Ontology</h2>
-          <div className="flex items-center gap-2">
-            {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
-              <Dialog open={isAISuggestionsDialogOpen} onOpenChange={setIsAISuggestionsDialogOpen}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveId(null)}
+      >
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Ontology</h2>
+            <div className="flex items-center gap-2">
+              {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
+                <Dialog open={isAISuggestionsDialogOpen} onOpenChange={setIsAISuggestionsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" variant="outline">
                     <Sparkles size={16} className="mr-2" /> AI Suggest
@@ -344,12 +480,25 @@ export function OntologyEditor() {
             <p className="text-sm mt-1">Create your first concept to organize your notes</p>
           </div>
         ) : (
-          <div> {/* This div wraps the mapped nodes */}
-            {ontology.rootIds?.map(rootId => {
-              const node = ontology.nodes[rootId];
-              return node ? renderNode(node) : null;
-            })}
-          </div> {/* This is the FIX: closing the div that wraps mapped nodes */}
+          <SortableContext
+            items={ontology.rootIds?.map(id => ontology.nodes[id]).filter(Boolean).map(n => n.id) || []}
+            strategy={verticalListSortingStrategy}
+          >
+            <div> {/* This div wraps the mapped nodes */}
+              {ontology.rootIds?.map(rootId => {
+                const node = ontology.nodes[rootId];
+                return node ? renderNode(node, 0) : null; // Pass level 0 for root nodes
+              })}
+            </div>
+          </SortableContext>
+          <DragOverlay>
+            {activeNode ? (
+              <div className="p-2 rounded bg-primary text-primary-foreground shadow-xl opacity-90">
+                <Badge variant="default">{activeNode.label}</Badge>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </div>
         )}
 
         {/* Edit Node Dialog */}

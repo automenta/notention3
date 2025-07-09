@@ -13,6 +13,8 @@ export interface Note {
   pinned?: boolean;
   archived?: boolean;
   isSharedPublicly?: boolean; // Indicates if the note has been published publicly to Nostr
+  embedding?: number[]; // Optional embedding vector for semantic search/matching
+  nostrSyncEventId?: string; // ID of the Nostr event used for syncing this note (Kind 4)
 }
 
 export interface OntologyNode {
@@ -39,7 +41,12 @@ export interface UserProfile {
     aiEnabled: boolean;
     defaultNoteStatus: "draft" | "published";
     ollamaApiEndpoint?: string;
+    ollamaEmbeddingModel?: string; // e.g., 'nomic-embed-text', 'mxbai-embed-large'
+    ollamaChatModel?: string; // e.g., 'llama3', 'mistral'
     geminiApiKey?: string;
+    geminiEmbeddingModel?: string; // e.g., 'embedding-001', 'text-embedding-004'
+    geminiChatModel?: string; // e.g., 'gemini-pro', 'gemini-1.5-flash'
+    aiProviderPreference?: 'ollama' | 'gemini'; // User preference for which provider to use if both configured
   };
   nostrRelays?: string[]; // User's preferred relays
   privacySettings?: {
@@ -48,6 +55,14 @@ export interface UserProfile {
     shareValuesWithPublicNotes: boolean;
     // More granular settings could be added, e.g., per note or per contact
   };
+  contacts?: Contact[]; // Optional list of contacts
+}
+
+export interface Contact {
+  pubkey: string;
+  alias?: string;
+  lastContact?: Date; // Timestamp of last interaction, useful for sorting
+  // Could add other metadata like petname, relay hints, etc.
 }
 
 export interface Folder {
@@ -68,6 +83,8 @@ export interface Match {
   sharedTags: string[];
   sharedValues: string[];
   timestamp: Date;
+  localNoteId?: string; // ID of the local note if it's an embedding match against local data
+  matchType?: 'nostr' | 'embedding'; // To differentiate match origins
 }
 
 export interface NostrEvent {
@@ -128,7 +145,7 @@ export interface AppState {
   
   // UI state
   currentNoteId?: string;
-  sidebarTab: "notes" | "ontology" | "network" | "settings";
+  sidebarTab: "notes" | "ontology" | "network" | "settings" | "contacts"; // Added 'contacts'
   searchQuery: string;
   searchFilters: SearchFilters;
   

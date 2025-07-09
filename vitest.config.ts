@@ -9,11 +9,11 @@ export default defineConfig({
     globals: true, // Makes describe, it, expect, etc. globally available
     environment: 'jsdom', // Use JSDOM for tests that need a browser-like environment
     setupFiles: './vitest.setup.ts', // Optional: For global test setup (e.g., jest-dom matchers)
-    coverage: {
-      provider: 'v8', // or 'istanbul'
-      reporter: ['text', 'json', 'html'],
-      reportsDirectory: './coverage',
-    },
+    // coverage: {
+    //   provider: 'v8', // or 'istanbul'
+    //   reporter: ['text', 'json', 'html'],
+    //   reportsDirectory: './coverage',
+    // },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

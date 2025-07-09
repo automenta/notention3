@@ -1,5 +1,5 @@
 import {
-  SimplePool, nip04, Event, UnsignedEvent, getEventHash, signEvent, Filter
+  SimplePool, nip04, Event, UnsignedEvent, getEventHash, finalizeEvent, Filter
 } from 'nostr-tools';
 import {
   getPublicKey
@@ -237,14 +237,9 @@ export class NostrService {
       content: contentToPublish,
     };
 
-    const eventId = getEventHash(unsignedEvent);
-    const signature = signEvent(unsignedEvent, this.privateKey);
-
-    const signedEvent: Event = {
-      ...unsignedEvent,
-      id: eventId,
-      sig: signature,
-    };
+    // finalizeEvent will compute the id, add pubkey, and sign.
+    // It mutates the unsignedEvent and returns it as a signed Event.
+    const signedEvent: Event = finalizeEvent(unsignedEvent, this.privateKey);
 
     console.log(`Publishing event to ${relaysToPublish.join(', ')}:`, signedEvent);
 
@@ -384,9 +379,9 @@ export class NostrService {
       content: encryptedContent,
     };
 
-    const eventId = getEventHash(unsignedEvent);
-    const signature = signEvent(unsignedEvent, this.privateKey);
-    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+    // finalizeEvent will compute the id, add pubkey, and sign.
+    // It mutates the unsignedEvent and returns it as a signed Event.
+    const signedEvent: Event = finalizeEvent(unsignedEvent, this.privateKey);
 
     const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
     if (relaysToPublish.length === 0) {
@@ -488,9 +483,9 @@ export class NostrService {
       content: ontologyJson,
     };
 
-    const eventId = getEventHash(unsignedEvent);
-    const signature = signEvent(unsignedEvent, this.privateKey);
-    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+    // finalizeEvent will compute the id, add pubkey, and sign.
+    // It mutates the unsignedEvent and returns it as a signed Event.
+    const signedEvent: Event = finalizeEvent(unsignedEvent, this.privateKey);
 
     const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
     if (relaysToPublish.length === 0) {
@@ -607,9 +602,9 @@ export class NostrService {
       content: reason, // NIP-09 suggests reason can be in content if not in tags.
     };
 
-    const eventId = getEventHash(unsignedEvent);
-    const signature = signEvent(unsignedEvent, this.privateKey);
-    const signedEvent: Event = { ...unsignedEvent, id: eventId, sig: signature };
+    // finalizeEvent will compute the id, add pubkey, and sign.
+    // It mutates the unsignedEvent and returns it as a signed Event.
+    const signedEvent: Event = finalizeEvent(unsignedEvent, this.privateKey);
 
     const relaysToPublish = targetRelays && targetRelays.length > 0 ? targetRelays : this.defaultRelays;
     if (relaysToPublish.length === 0) {

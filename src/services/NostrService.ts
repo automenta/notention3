@@ -119,10 +119,11 @@ export class NostrService {
     targetRelays?: string[],
     encrypt: boolean = false,
     recipientPublicKey?: string,
-    privacySettings?: { // Added privacy settings parameter
+    privacySettings?: {
       sharePublicNotesGlobally: boolean;
       shareTagsWithPublicNotes: boolean;
       shareValuesWithPublicNotes: boolean;
+      shareEmbeddingsWithPublicNotes?: boolean; // Added new setting
     }
   ): Promise<string[]> { // Returns event IDs from relays
     if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
@@ -134,6 +135,7 @@ export class NostrService {
       sharePublicNotesGlobally: false,
       shareTagsWithPublicNotes: false,
       shareValuesWithPublicNotes: false,
+      shareEmbeddingsWithPublicNotes: false, // Default to false
     };
 
     // If trying to publish a public (non-encrypted) note but global sharing is off, prevent.
@@ -174,6 +176,16 @@ export class NostrService {
         for (const [key, value] of Object.entries(note.values)) {
           tags.push(['param', key, value]);
         }
+      }
+    }
+
+    // Add embedding if public, sharing is enabled, and embedding exists
+    if (!encrypt && currentPrivacySettings.shareEmbeddingsWithPublicNotes && note.embedding && note.embedding.length > 0) {
+      try {
+        tags.push(['embedding', JSON.stringify(note.embedding)]);
+      } catch (e) {
+        console.error("Failed to stringify note embedding for Nostr tag:", e);
+        // Decide if you want to proceed without the embedding or throw an error
       }
     }
 

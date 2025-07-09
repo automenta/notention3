@@ -394,15 +394,15 @@ export function NetworkPanel() {
           </CardContent>
         </Card>
 
-        {/* Nostr Network Matches (Tag-based) */}
+        {/* Nostr Network Matches */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Share2 size={20} /> {/* Changed Icon */}
-              Network Matches (Tags)
+              Network Matches
             </CardTitle>
             <CardDescription>
-              Notes from others on Nostr that share similar tags or topics.
+              Notes from others on Nostr that match your local notes based on tags or content embeddings.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -421,13 +421,20 @@ export function NetworkPanel() {
                     <div key={match.id} className="p-3 border border-border rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-sm font-semibold text-primary truncate">
-                          Note by: {match.targetAuthor.slice(0, 10)}...{match.targetAuthor.slice(-6)}
+                          {match.matchType === 'embedding' && match.localNoteId ?
+                           `Local: "${useAppStore.getState().notes[match.localNoteId]?.title?.substring(0,20) || 'Note'}" matches Remote by Content` :
+                           `Remote Note by: ${match.targetAuthor.slice(0, 10)}...`}
                         </span>
-                        <Badge variant="outline" className="text-xs">
-                          {formatDate(match.timestamp)}
+                        <Badge variant={match.matchType === 'embedding' ? "default" : "outline"} className="text-xs capitalize">
+                          {match.matchType || 'Tag'} Match ({Math.round(match.similarity * 100)}%)
                         </Badge>
                       </div>
-                      {match.sharedTags.length > 0 && (
+                       <p className="text-xs text-muted-foreground mb-1">
+                        {match.matchType === 'embedding' && match.localNoteId ?
+                         `Remote Author: ${match.targetAuthor.slice(0,10)}...` :
+                         `Timestamp: ${formatDate(match.timestamp)}`}
+                      </p>
+                      {match.sharedTags && match.sharedTags.length > 0 && (
                         <div className="mb-1">
                           <p className="text-xs font-medium text-muted-foreground mb-0.5">Shared Tags:</p>
                           <div className="flex flex-wrap gap-1">

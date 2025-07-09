@@ -181,7 +181,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
             aiEnabled: false,
             defaultNoteStatus: 'draft',
             ollamaApiEndpoint: '',
-            geminiApiKey: ''
+            geminiApiKey: '',
+            aiMatchingSensitivity: 0.7, // Default sensitivity
           },
           nostrRelays: defaultRelays,
           privacySettings: {
@@ -209,6 +210,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         defaultNoteStatus: 'draft',
         ollamaApiEndpoint: '',
         geminiApiKey: '',
+        aiMatchingSensitivity: 0.7, // Ensure default here too
         ...userProfileData.preferences,
       };
       
@@ -704,7 +706,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
               aiEnabled: false,
               defaultNoteStatus: 'draft',
               ollamaApiEndpoint: '',
-              geminiApiKey: ''
+              geminiApiKey: '',
+              aiMatchingSensitivity: 0.7,
             },
             nostrRelays: defaultRelays,
             privacySettings: { // Default privacy settings
@@ -792,7 +795,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
             aiEnabled: false,
             defaultNoteStatus: 'draft',
             ollamaApiEndpoint: '',
-            geminiApiKey: ''
+            geminiApiKey: '',
+            aiMatchingSensitivity: 0.7,
           },
           nostrRelays: currentRelaysInStore,
           privacySettings: defaultPrivacySettings,
@@ -1152,21 +1156,109 @@ export const useAppStore = create<AppStore>((set, get) => ({
                                 // sharedSemanticTags: commonSemanticTags.slice(0,5), // Could also show these for debug/advanced view
                                 sharedValues: [], // TODO: Implement value matching based on ontology attributes
                                 timestamp: new Date(event.created_at * 1000),
+                                matchType: 'nostr', // Explicitly set matchType for tag-based matches
                             };
                         }
                     }
                 }
             }
 
-            if (bestMatchForEvent) {
-                 // If a previous match for this remote note existed but was worse, remove it.
-                 const oldMatchIndex = state.matches.findIndex(m => m.targetNoteId === bestMatchForEvent!.targetNoteId);
-                 if (oldMatchIndex !== -1) {
-                     state.matches.splice(oldMatchIndex, 1);
-                 }
-                state.addNostrMatch(bestMatchForEvent); // addNostrMatch in store should handle deduplication by ID if necessary or just append
-                console.log("New/Updated ontology-aware match found:", bestMatchForEvent);
-            }
+            // Combined loop for tag and embedding matching
+            for (const localNote of localNotesArray) {
+              let bestTagMatchForThisPair: Match | null = null;
+
+              // 1. Tag-based matching logic (adapted from previous)
+              if (potentialNote.tags && potentialNote.tags.length > 0 && localNote.tags && localNote.tags.length > 0) {
+                const localSemanticTags = new Set<string>();
+                localNote.tags.forEach(tag =>
+                  OntologyService.getSemanticMatches(ontologyTree, tag).forEach(st => localSemanticTags.add(st.toLowerCase()))
+                );
+                const incomingSemanticTags = new Set<string>();
+                (potentialNote.tags || []).forEach(tag =>
+                  OntologyService.getSemanticMatches(ontologyTree, tag).forEach(st => incomingSemanticTags.add(st.toLowerCase()))
+                );
+                const commonSemanticTags = [...localSemanticTags].filter(t => incomingSemanticTags.has(t));
+
+                if (commonSemanticTags.length > 0) {
+                  const literalSharedOriginalTags = (potentialNote.tags || [])
+                    .filter(incomingTag => localNote.tags.map(lt => lt.toLowerCase()).includes(incomingTag.toLowerCase()));
+                  const unionSize = new Set([...localSemanticTags, ...incomingSemanticTags]).size;
+                  const similarityScore = unionSize > 0 ? commonSemanticTags.length / unionSize : 0;
+
+                  // Define a threshold for tag match similarity if needed, e.g., 0.1
+                  if (similarityScore > 0.05) { // Example threshold
+                    bestTagMatchForThisPair = {
+                      id: `match-${localNote.id}-${event.id}`,
+                      localNoteId: localNote.id,
+                      targetNoteId: event.id,
+                      targetAuthor: event.pubkey,
+                      similarity: similarityScore,
+                      sharedTags: literalSharedOriginalTags.slice(0, 5),
+                      sharedValues: [],
+                      timestamp: new Date(event.created_at * 1000),
+                      matchType: 'nostr',
+                    };
+                  }
+                }
+              }
+
+              if (bestTagMatchForThisPair) {
+                const oldTagMatchIndex = state.matches.findIndex(m => m.targetNoteId === event.id && m.localNoteId === localNote.id && m.matchType === 'nostr');
+                if (oldTagMatchIndex !== -1) {
+                  if (state.matches[oldTagMatchIndex].similarity < bestTagMatchForThisPair.similarity) {
+                    state.matches.splice(oldTagMatchIndex, 1);
+                    state.addNostrMatch(bestTagMatchForThisPair);
+                    console.log("Updated ontology-aware tag match (better similarity):", bestTagMatchForThisPair);
+                  }
+                } else {
+                  state.addNostrMatch(bestTagMatchForThisPair);
+                  console.log("New ontology-aware tag match found:", bestTagMatchForThisPair);
+                }
+              }
+
+              // 2. Embedding-based matching logic
+              const remoteEmbeddingTagValue = event.tags.find(tag => tag[0] === 'embedding')?.[1];
+              if (remoteEmbeddingTagValue && localNote.embedding && localNote.embedding.length > 0) {
+                try {
+                  const remoteEmbedding = JSON.parse(remoteEmbeddingTagValue) as number[];
+                  if (Array.isArray(remoteEmbedding) && remoteEmbedding.length > 0 && NoteService.cosineSimilarity([0],[0]) !== undefined) {
+                    const similarity = NoteService.cosineSimilarity(remoteEmbedding, localNote.embedding);
+                    const similarityThreshold = state.userProfile?.preferences.aiMatchingSensitivity ?? 0.7;
+
+                    if (similarity >= similarityThreshold) {
+                      const existingEmbeddingMatchIndex = state.matches.findIndex(
+                        m => m.targetNoteId === event.id && m.localNoteId === localNote.id && m.matchType === 'embedding'
+                      );
+
+                      const embeddingMatch: Match = {
+                        id: `embedmatch-nostr-${localNote.id}-${event.id}`,
+                        localNoteId: localNote.id,
+                        targetNoteId: event.id,
+                        targetAuthor: event.pubkey,
+                        similarity: similarity,
+                        sharedTags: localNote.tags.filter(lt => (potentialNote.tags || []).includes(lt)),
+                        sharedValues: [],
+                        timestamp: new Date(event.created_at * 1000),
+                        matchType: 'embedding',
+                      };
+
+                      if (existingEmbeddingMatchIndex !== -1) {
+                        if (state.matches[existingEmbeddingMatchIndex].similarity < similarity) {
+                          state.matches.splice(existingEmbeddingMatchIndex, 1);
+                          state.addNostrMatch(embeddingMatch);
+                          console.log("Updated Nostr embedding match (better similarity):", embeddingMatch);
+                        }
+                      } else {
+                        state.addNostrMatch(embeddingMatch);
+                        console.log("New Nostr embedding match found:", embeddingMatch);
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Failed to parse or process embedding from Nostr event tag for a local note:", e, event);
+                }
+              }
+            } // End of for...of localNotesArray
         }
     }
     // TODO: Handle other event kinds
@@ -1385,6 +1477,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       defaultNoteStatus: 'draft' as const,
       ollamaApiEndpoint: '',
       geminiApiKey: '',
+      aiMatchingSensitivity: 0.7,
     };
 
     const defaultPrivacySettings = {

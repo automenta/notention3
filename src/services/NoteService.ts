@@ -47,105 +47,89 @@ export class NoteService {
     filters: SearchFilters = {}, // Default to empty object
     allNotes?: Note[]
   ): Promise<Note[]> {
-    let notesToSearch = allNotes || await DBService.getAllNotes();
-    const trimmedQuery = query.trim(); // Keep original case for potential tag matching
-    const normalizedQuery = trimmedQuery.toLowerCase(); // For general text matching
+    const sourceNotes = allNotes || await DBService.getAllNotes();
+    const trimmedQuery = query.trim();
+    const normalizedQuery = trimmedQuery.toLowerCase();
 
-    // Apply structured filters first
-    if (filters.status) {
-      notesToSearch = notesToSearch.filter(note => note.status === filters.status);
-    }
-
-    if (filters.folderId) {
-      notesToSearch = notesToSearch.filter(note => note.folderId === filters.folderId);
-    }
-
+    // Pre-calculate semantic tags for filtering if filter.tags are present
+    const filterSemanticTagsSet = new Set<string>();
     if (filters.tags && filters.tags.length > 0) {
-      // Use original casing from filters.tags for getSemanticMatches
-      const allSemanticFilterTags = new Set<string>();
       filters.tags.forEach(originalFilterTag => {
         OntologyService.getSemanticMatches(ontology, originalFilterTag)
-          .forEach(match => allSemanticFilterTags.add(match.toLowerCase()));
+          .forEach(match => filterSemanticTagsSet.add(match.toLowerCase()));
       });
-
-      notesToSearch = notesToSearch.filter(note =>
-        note.tags.some(noteTag => allSemanticFilterTags.has(noteTag.toLowerCase()))
-      );
     }
 
-    if (filters.values) {
-      for (const [key, value] of Object.entries(filters.values)) {
-        if (value === undefined || value === null || value === '') continue; // Skip empty filter values
-        const filterKeyLower = key.toLowerCase();
-        const filterValueLower = value.toLowerCase();
-        notesToSearch = notesToSearch.filter(note =>
-          note.values &&
-          Object.entries(note.values).some(([noteValKey, noteVal]) =>
-            noteValKey.toLowerCase() === filterKeyLower && noteVal.toLowerCase().includes(filterValueLower)
-          )
-        );
+    // Pre-calculate semantic tags for text search if query is a tag
+    const textSearchSemanticTagsSet = new Set<string>();
+    if (normalizedQuery.startsWith('#') || normalizedQuery.startsWith('@')) {
+      OntologyService.getSemanticMatches(ontology, trimmedQuery) // Use original case for matching
+        .forEach(match => textSearchSemanticTagsSet.add(match.toLowerCase()));
+    }
+
+    return sourceNotes.filter(note => {
+      // Apply structured filters first (early exit)
+      if (filters.status && note.status !== filters.status) {
+        return false;
       }
-    }
-
-    if (filters.fields) {
+      if (filters.folderId && note.folderId !== filters.folderId) {
+        return false;
+      }
+      if (filterSemanticTagsSet.size > 0) {
+        if (!note.tags || !note.tags.some(noteTag => filterSemanticTagsSet.has(noteTag.toLowerCase()))) {
+          return false;
+        }
+      }
+      if (filters.values) {
+        for (const [key, value] of Object.entries(filters.values)) {
+          if (value === undefined || value === null || value === '') continue;
+          const filterKeyLower = key.toLowerCase();
+          const filterValueLower = value.toLowerCase();
+          if (!note.values || !Object.entries(note.values).some(([noteValKey, noteVal]) =>
+            noteValKey.toLowerCase() === filterKeyLower && noteVal.toLowerCase().includes(filterValueLower)
+          )) {
+            return false; // Note does not match this value filter
+          }
+        }
+      }
+      if (filters.fields) {
         for (const [key, value] of Object.entries(filters.fields)) {
           if (value === undefined || value === null || value === '') continue;
           const filterKeyLower = key.toLowerCase();
-          const filterValueLower = String(value).toLowerCase(); // Ensure value is string for comparison
-          notesToSearch = notesToSearch.filter(note =>
-            note.fields &&
-            Object.entries(note.fields).some(([noteFieldKey, noteFieldValue]) =>
-              noteFieldKey.toLowerCase() === filterKeyLower && String(noteFieldValue).toLowerCase().includes(filterValueLower)
-            )
-          );
+          const filterValueLower = String(value).toLowerCase();
+          if (!note.fields || !Object.entries(note.fields).some(([noteFieldKey, noteFieldValue]) =>
+            noteFieldKey.toLowerCase() === filterKeyLower && String(noteFieldValue).toLowerCase().includes(filterValueLower)
+          )) {
+            return false; // Note does not match this field filter
+          }
         }
-    }
+      }
 
-    // If there's no full-text query, return the already filtered notes
-    if (!normalizedQuery) {
-      return notesToSearch;
-    }
-
-    // Apply full-text search on the (potentially) pre-filtered notes
-    const textSearchSemanticTags = new Set<string>();
-    if (trimmedQuery.startsWith('#') || trimmedQuery.startsWith('@')) {
-      // Use original-cased trimmedQuery for semantic matching
-      OntologyService.getSemanticMatches(ontology, trimmedQuery)
-        .forEach(match => textSearchSemanticTags.add(match.toLowerCase()));
-    }
-
-    const matchedNotes = notesToSearch.filter(note => {
-      // 1. Check title and content for the normalized (lowercase) query
-      if (normalizedQuery && (note.title.toLowerCase().includes(normalizedQuery) || note.content.toLowerCase().includes(normalizedQuery))) {
+      // If there's no full-text query after passing structured filters, it's a match
+      if (!normalizedQuery) {
         return true;
       }
 
-      // 2. If the original query was a tag, check if the note contains any of its semantic matches
-      if (textSearchSemanticTags.size > 0 && note.tags && note.tags.some(tag => textSearchSemanticTags.has(tag.toLowerCase()))) {
+      // Apply full-text search logic
+      if (note.title.toLowerCase().includes(normalizedQuery) || note.content.toLowerCase().includes(normalizedQuery)) {
         return true;
       }
-
-      // 3. If query is not a tag, or for broader matching: check if normalizedQuery matches any key or value in `note.values`
-      // This part might be too broad if textSearchSemanticTags already matched.
-      // Consider if this should only run if textSearchSemanticTags is empty or no match was found yet.
-      // For now, it's an OR condition.
-      if (normalizedQuery && note.values && Object.entries(note.values).some(([key, value]) =>
+      if (textSearchSemanticTagsSet.size > 0 && note.tags && note.tags.some(tag => textSearchSemanticTagsSet.has(tag.toLowerCase()))) {
+        return true;
+      }
+      if (note.values && Object.entries(note.values).some(([key, value]) =>
         key.toLowerCase().includes(normalizedQuery) || value.toLowerCase().includes(normalizedQuery)
       )) {
         return true;
       }
-
-      // 4. Check if normalizedQuery matches any key or value in `note.fields`
-      if (normalizedQuery && note.fields && Object.entries(note.fields).some(([key, value]) =>
+      if (note.fields && Object.entries(note.fields).some(([key, value]) =>
         key.toLowerCase().includes(normalizedQuery) || String(value).toLowerCase().includes(normalizedQuery)
       )) {
         return true;
       }
 
-      return false;
+      return false; // Does not match full-text query
     });
-
-    return matchedNotes;
   }
 
   // Basic CRUD operations

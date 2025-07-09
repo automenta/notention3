@@ -18,6 +18,7 @@ const initialUserProfile: UserProfile = {
     sharePublicNotesGlobally: false,
     shareTagsWithPublicNotes: true,
     shareValuesWithPublicNotes: true,
+    shareEmbeddingsWithPublicNotes: false, // Add default for the new field
   },
 };
 
@@ -67,6 +68,7 @@ const getMockUserProfile = (overrides: Partial<UserProfile['preferences']> = {})
     sharePublicNotesGlobally: false,
     shareTagsWithPublicNotes: true,
     shareValuesWithPublicNotes: true,
+    shareEmbeddingsWithPublicNotes: false, // Added new field
   },
 });
 
@@ -101,6 +103,51 @@ describe('SettingsPanel', () => {
       addNostrRelay: mockAddNostrRelay,
       removeNostrRelay: mockRemoveNostrRelay,
       updateUserProfile: mockUpdateUserProfile, // This is the store's main updateUserProfile
+    });
+  });
+
+  it('updates Ollama and Gemini model inputs when AI is enabled', async () => {
+    useAppStore.setState({ userProfile: getMockUserProfile({ aiEnabled: true }) });
+    render(<SettingsPanel />);
+
+    const ollamaChatInput = screen.getByLabelText(/Ollama Chat Model/i);
+    fireEvent.change(ollamaChatInput, { target: { value: 'new-ollama-chat' } });
+    await waitFor(() => {
+      expect(mockUpdateUserProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: expect.objectContaining({ ollamaChatModel: 'new-ollama-chat' }),
+        })
+      );
+    });
+
+    const ollamaEmbedInput = screen.getByLabelText(/Ollama Embedding Model/i);
+    fireEvent.change(ollamaEmbedInput, { target: { value: 'new-ollama-embed' } });
+    await waitFor(() => {
+      expect(mockUpdateUserProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: expect.objectContaining({ ollamaEmbeddingModel: 'new-ollama-embed' }),
+        })
+      );
+    });
+
+    const geminiChatInput = screen.getByLabelText(/Gemini Chat Model/i);
+    fireEvent.change(geminiChatInput, { target: { value: 'new-gemini-chat' } });
+    await waitFor(() => {
+      expect(mockUpdateUserProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: expect.objectContaining({ geminiChatModel: 'new-gemini-chat' }),
+        })
+      );
+    });
+
+    const geminiEmbedInput = screen.getByLabelText(/Gemini Embedding Model/i);
+    fireEvent.change(geminiEmbedInput, { target: { value: 'new-gemini-embed' } });
+    await waitFor(() => {
+      expect(mockUpdateUserProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: expect.objectContaining({ geminiEmbeddingModel: 'new-gemini-embed' }),
+        })
+      );
     });
   });
 
@@ -303,6 +350,147 @@ describe('SettingsPanel', () => {
             privacySettings: expect.objectContaining({ shareTagsWithPublicNotes: true })
         }));
     });
+
+    const shareEmbeddingsSwitch = screen.getByLabelText(/Share Embeddings with Public Notes/i);
+    // This switch should be disabled if global public sharing is off OR AI is off.
+    // In the default mock, global public is false, AI is false. So it should be disabled.
+    expect(shareEmbeddingsSwitch).toBeDisabled();
+
+    // Enable global public sharing and AI to test the switch itself
+    const profileWithAiAndPublicSharing = getMockUserProfile();
+    if (profileWithAiAndPublicSharing.preferences) profileWithAiAndPublicSharing.preferences.aiEnabled = true;
+    if (profileWithAiAndPublicSharing.privacySettings) profileWithAiAndPublicSharing.privacySettings.sharePublicNotesGlobally = true;
+
+    useAppStore.setState({ userProfile: profileWithAiAndPublicSharing });
+
+    // Re-render to pick up new state for switch enabled status
+    // Note: It's often better to set up the desired state *before* the initial render of a test case
+    // if the initial enabled/disabled state is critical.
+    // However, if testing dynamic changes, re-rendering or waiting for updates is fine.
+    // For this specific test, we'll re-render to ensure the switch is enabled by the new state.
+    const { rerender } = render(<SettingsPanel />);
+    rerender(<SettingsPanel />); // Rerender with the updated store state.
+
+    const nowEnabledShareEmbeddingsSwitch = screen.getByLabelText(/Share Embeddings with Public Notes/i);
+    expect(nowEnabledShareEmbeddingsSwitch).not.toBeDisabled();
+    fireEvent.click(nowEnabledShareEmbeddingsSwitch);
+    await waitFor(() => {
+        expect(mockUpdateUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+            privacySettings: expect.objectContaining({ shareEmbeddingsWithPublicNotes: true })
+        }));
+    });
   });
 
+  // Test for "Import Private Key" modal logic
+  it('handles importing a valid private key (nsec)', async () => {
+    mockGenerateAndStoreNostrKeys.mockResolvedValue({ publicKey: 'imported-pk', privateKey: undefined });
+    render(<SettingsPanel />);
+
+    const importKeyButton = screen.getByRole('button', { name: /Import Existing Private Key/i });
+    fireEvent.click(importKeyButton);
+
+    const privateKeyInput = await screen.findByLabelText(/Private Key \(nsec\)/i);
+    // More robust selector for the modal's primary action button
+    const modalDialog = screen.getByRole('dialog', { name: /Import Existing Private Key/i });
+    const modalImportButton = Array.from(modalDialog.querySelectorAll('button')).find(btn => btn.textContent === 'Import Key');
+
+    expect(privateKeyInput).toBeInTheDocument();
+    expect(modalImportButton).toBeInTheDocument();
+
+    fireEvent.change(privateKeyInput, { target: { value: 'nsec1validkeyformat' } });
+
+    const mockConfirmImport = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(modalImportButton!);
+
+    expect(mockConfirmImport).toHaveBeenCalledWith(expect.stringContaining('replace your current Nostr identity'));
+    await waitFor(() => {
+      expect(mockGenerateAndStoreNostrKeys).toHaveBeenCalledWith('nsec1validkeyformat');
+    });
+    // Check for alert instead of toast for this specific action in component
+    expect(global.alert).toHaveBeenCalledWith(expect.stringContaining('Private key imported successfully!'));
+
+    // Check if modal closes by querying for its absence
+    await waitFor(() => {
+        expect(screen.queryByRole('dialog', {name: /Import Existing Private Key/i})).not.toBeInTheDocument();
+    });
+    mockConfirmImport.mockRestore();
+  });
+
+  it('shows error for invalid nsec format during import', async () => {
+    render(<SettingsPanel />);
+    const importKeyButton = screen.getByRole('button', { name: /Import Existing Private Key/i });
+    fireEvent.click(importKeyButton);
+
+    const privateKeyInput = await screen.findByLabelText(/Private Key \(nsec\)/i);
+    const modalDialog = screen.getByRole('dialog', { name: /Import Existing Private Key/i });
+    const modalImportButton = Array.from(modalDialog.querySelectorAll('button')).find(btn => btn.textContent === 'Import Key');
+
+    fireEvent.change(privateKeyInput, { target: { value: 'invalidkeyformat' } });
+    fireEvent.click(modalImportButton!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid private key format. It should start with 'nsec'./i)).toBeInTheDocument();
+    });
+    expect(mockGenerateAndStoreNostrKeys).not.toHaveBeenCalled();
+  });
+
+  // Test for "New Private Key Backup" modal logic
+  it('handles copy and confirmation in new private key backup modal', async () => {
+    mockGenerateAndStoreNostrKeys.mockResolvedValue({ publicKey: 'new-pk-for-backup', privateKey: 'nsec1newkeyforbackup' });
+    render(<SettingsPanel />);
+
+    const generateKeysButton = screen.getByRole('button', { name: /Generate New Keys/i });
+    const mockConfirmGenerate = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(generateKeysButton);
+    mockConfirmGenerate.mockRestore();
+
+    await screen.findByText('IMPORTANT: Back Up Your New Private Key');
+
+    const copyButton = screen.getByRole('button', { name: /Copy Private Key/i });
+    fireEvent.click(copyButton);
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('nsec1newkeyforbackup');
+    });
+
+    const confirmCheckbox = screen.getByLabelText(/I have securely backed up my new private key./i);
+    fireEvent.click(confirmCheckbox);
+
+    const confirmBackupButton = screen.getByRole('button', { name: /Confirm Backup & Continue/i });
+    expect(confirmBackupButton).not.toBeDisabled();
+    fireEvent.click(confirmBackupButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText('IMPORTANT: Back Up Your New Private Key')).not.toBeInTheDocument();
+    });
+    expect(toast.success).toHaveBeenCalledWith("New Nostr identity set up successfully!");
+  });
+
+  // Test for "Import Data"
+  it('handles data import flow', async () => {
+    const mockImportData = { notes: [{id: 'importedNote', title: 'Imported', content: '', tags:[], values:{}, fields:{}, status: 'draft', createdAt: new Date(), updatedAt: new Date() }] };
+    const mockFile = new File([JSON.stringify(mockImportData)], 'backup.json', { type: 'application/json' });
+
+    const mockReaderInstance = {
+      onload: null as ((e: any) => void) | null,
+      readAsText: vi.fn(function(this: any) {
+        if (this.onload) {
+          this.onload({ target: { result: JSON.stringify(mockImportData) } });
+        }
+      }),
+      onerror: null as (() => void) | null,
+    };
+    const FileReaderMock = vi.spyOn(global, 'FileReader').mockImplementation(() => mockReaderInstance as any);
+
+    render(<SettingsPanel />);
+    const fileInput = document.getElementById('import-file') as HTMLInputElement;
+
+    // Simulate file selection - this will trigger reader.readAsText, then onload
+    fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    await waitFor(() => {
+      expect(mockDBService.importData).toHaveBeenCalledWith(mockImportData);
+    });
+    expect(global.alert).toHaveBeenCalledWith('Data imported successfully! Please refresh the page.');
+    FileReaderMock.mockRestore();
+  });
 });

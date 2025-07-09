@@ -47,12 +47,14 @@ export interface UserProfile {
     geminiEmbeddingModel?: string; // e.g., 'embedding-001', 'text-embedding-004'
     geminiChatModel?: string; // e.g., 'gemini-pro', 'gemini-1.5-flash'
     aiProviderPreference?: 'ollama' | 'gemini'; // User preference for which provider to use if both configured
+    aiMatchingSensitivity?: number; // Threshold for embedding similarity (0.0 to 1.0)
   };
   nostrRelays?: string[]; // User's preferred relays
   privacySettings?: {
     sharePublicNotesGlobally: boolean; // A master switch for all public sharing
     shareTagsWithPublicNotes: boolean;
     shareValuesWithPublicNotes: boolean;
+    shareEmbeddingsWithPublicNotes?: boolean; // New setting for sharing embeddings
     // More granular settings could be added, e.g., per note or per contact
   };
   contacts?: Contact[]; // Optional list of contacts

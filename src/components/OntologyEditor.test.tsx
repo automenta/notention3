@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { vi } from 'vitest';
 import { OntologyEditor } from './OntologyEditor';
 import { useAppStore } from '../store';
@@ -215,6 +215,75 @@ describe('OntologyEditor', () => {
     expect(toast.success).toHaveBeenCalledWith("Ontology exported successfully!");
   });
 
+  it('adds, edits, and removes attributes in the edit dialog', async () => {
+    render(<WrappedOntologyEditor />);
+    const root1NodeElement = screen.getByText('#Root1').closest('div.group');
+    const editButton = root1NodeElement?.querySelector('button [lucide="edit-2"]');
+    if (!editButton) throw new Error("Edit button for #Root1 not found");
+    fireEvent.click(editButton.parentElement!);
+
+    // Wait for dialog to open and find "Add Attribute" button
+    const addAttributeButton = await screen.findByRole('button', { name: /Add Attribute/i });
+    fireEvent.click(addAttributeButton);
+
+    // Wait for new attribute input fields to appear
+    // Assuming new inputs are empty. Inputs might need more specific selectors or test-ids.
+    const attributeKeyInputs = await screen.findAllByPlaceholderText('Attribute Name');
+    const attributeValueInputs = await screen.findAllByPlaceholderText('Attribute Value');
+
+    // New attribute input should be the last one if attributes are listed
+    const newKeyInput = attributeKeyInputs[attributeKeyInputs.length - 1];
+    const newValueInput = attributeValueInputs[attributeValueInputs.length - 1];
+
+    fireEvent.change(newKeyInput, { target: { value: 'TestKey' } });
+    fireEvent.change(newValueInput, { target: { value: 'TestValue' } });
+
+    // Save changes
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => {
+      expect(OntologyService.updateNode).toHaveBeenCalledWith(
+        expect.anything(),
+        'root1',
+        expect.objectContaining({ attributes: { 'TestKey': 'TestValue' } })
+      );
+    });
+
+    // Re-open dialog to edit the attribute
+    fireEvent.click(editButton.parentElement!);
+    const updatedKeyInput = await screen.findByDisplayValue('TestKey');
+    const updatedValueInput = await screen.findByDisplayValue('TestValue');
+
+    fireEvent.change(updatedKeyInput, { target: { value: 'TestKeyUpdated' } });
+    fireEvent.change(updatedValueInput, { target: { value: 'TestValueUpdated' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await waitFor(() => {
+      expect(OntologyService.updateNode).toHaveBeenCalledWith(
+        expect.anything(),
+        'root1',
+        expect.objectContaining({ attributes: { 'TestKeyUpdated': 'TestValueUpdated' } })
+      );
+    });
+
+    // Re-open dialog to remove the attribute
+    fireEvent.click(editButton.parentElement!);
+    const removeAttributeButton = (await screen.findByDisplayValue('TestKeyUpdated'))
+                                    .closest('.flex') // Assuming key/value/remove are in a flex container
+                                    ?.querySelector('button [lucide="trash-2"]');
+    if (!removeAttributeButton) throw new Error("Remove attribute button not found");
+    fireEvent.click(removeAttributeButton.parentElement!); // Click the button containing the icon
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await waitFor(() => {
+      expect(OntologyService.updateNode).toHaveBeenCalledWith(
+        expect.anything(),
+        'root1',
+        expect.objectContaining({ attributes: {} }) // Empty attributes
+      );
+    });
+  });
+
   // Basic test for drag and drop handler call. Does not test visual DnD.
   it('handleDragEnd is called and attempts to move node on drag end', async () => {
     setupStore(); // Ensure clean store
@@ -244,6 +313,70 @@ describe('OntologyEditor', () => {
     // Placeholder: Check if the DnD context is rendered at least.
     expect(screen.getByText('#Root1')).toBeInTheDocument(); // Confirms editor rendered.
     // Further DnD interaction testing is better suited for E2E.
+  });
+
+  it('handles ontology import and confirms overwrite', async () => {
+    setupStore(); // Start with mockOntology
+    const mockImportedOntology: OntologyTree = {
+      nodes: { 'importedNode': { id: 'importedNode', label: '#ImportedConcept', children: [] } },
+      rootIds: ['importedNode'],
+      updatedAt: new Date(),
+    };
+    vi.mocked(OntologyService.importFromJSON).mockReturnValue(mockImportedOntology);
+    const mockConfirm = vi.spyOn(window, 'confirm').mockReturnValue(true); // Simulate user confirming overwrite
+
+    render(<WrappedOntologyEditor />);
+
+    const importButton = screen.getByRole('button', { name: /Import/i });
+    // The actual file input is hidden, the button triggers its click.
+    // We need to simulate a file change on the hidden input.
+    const fileInput = document.getElementById('import-ontology-file') as HTMLInputElement;
+
+    const mockFile = new File(
+      [JSON.stringify(mockImportedOntology)],
+      'ontology.json',
+      { type: 'application/json' }
+    );
+
+    // Simulate file selection
+    // fireEvent.click(importButton); // This would click the button that clicks the input
+    // Directly dispatch change event on the file input
+    await act(async () => { // Wrap in act for state updates from FileReader
+        fireEvent.change(fileInput, { target: { files: [mockFile] } });
+    });
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalledWith("This will replace your current ontology. Are you sure you want to proceed?");
+      expect(OntologyService.importFromJSON).toHaveBeenCalledWith(JSON.stringify(mockImportedOntology));
+      expect(mockUpdateOntology).toHaveBeenCalledWith(mockImportedOntology);
+      expect(mockSetStoreOntology).toHaveBeenCalledWith(mockImportedOntology); // Check if direct set is called
+    });
+    expect(toast.success).toHaveBeenCalledWith("Ontology imported successfully!");
+
+    mockConfirm.mockRestore();
+  });
+
+  it('handles ontology import and cancels overwrite', async () => {
+    setupStore();
+    const mockFile = new File(["{}"], 'ontology.json', { type: 'application/json' });
+    vi.mocked(OntologyService.importFromJSON).mockReturnValue({ nodes: {}, rootIds: [] }); // Return minimal valid
+    const mockConfirm = vi.spyOn(window, 'confirm').mockReturnValue(false); // Simulate user canceling overwrite
+
+    render(<WrappedOntologyEditor />);
+    const fileInput = document.getElementById('import-ontology-file') as HTMLInputElement;
+
+    await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [mockFile] } });
+    });
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalled();
+    });
+    expect(OntologyService.importFromJSON).not.toHaveBeenCalled(); // Should not proceed if overwrite cancelled
+    expect(mockUpdateOntology).not.toHaveBeenCalled();
+    expect(mockSetStoreOntology).not.toHaveBeenCalled();
+
+    mockConfirm.mockRestore();
   });
 
 });

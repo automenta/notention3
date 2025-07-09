@@ -353,7 +353,7 @@ export function SettingsPanel() {
                 disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
                 onCheckedChange={(checked) => {
                   if (userProfile && userProfile.privacySettings) {
-                    updateUserProfile({
+                    storeUpdateUserProfile({ // Use storeUpdateUserProfile
                       ...userProfile,
                       privacySettings: {
                         ...userProfile.privacySettings,
@@ -383,6 +383,31 @@ export function SettingsPanel() {
                       privacySettings: {
                         ...userProfile.privacySettings,
                         shareValuesWithPublicNotes: checked,
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="shareEmbeddingsWithPublicNotes" className="text-sm">Share Embeddings with Public Notes</Label>
+                <p className="text-xs text-muted-foreground">
+                  Include content embeddings (if AI enabled) when sharing notes publicly.
+                </p>
+              </div>
+              <Switch
+                id="shareEmbeddingsWithPublicNotes"
+                checked={userProfile?.privacySettings?.shareEmbeddingsWithPublicNotes || false}
+                disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally || !userProfile?.preferences.aiEnabled} // Disable if global public or AI is off
+                onCheckedChange={(checked) => {
+                  if (userProfile && userProfile.privacySettings) {
+                    storeUpdateUserProfile({ // Use storeUpdateUserProfile
+                      ...userProfile,
+                      privacySettings: {
+                        ...userProfile.privacySettings,
+                        shareEmbeddingsWithPublicNotes: checked,
                       },
                     });
                   }

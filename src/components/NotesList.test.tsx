@@ -280,4 +280,168 @@ describe('NotesList', () => {
     expect(listItems[2]).toContain('Alpha Note');
   });
 
+  it('deletes a note when delete button is clicked and confirmed', async () => {
+    (NoteService.semanticSearch as vi.Mock).mockResolvedValue([...mockNotes]);
+    useAppStore.setState({ displayedItemsForTest: mockNotes } as any);
+    const mockStoreDeleteNote = vi.fn();
+    useAppStore.setState({ deleteNote: mockStoreDeleteNote });
+
+    // Mock window.confirm
+    const mockConfirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<NotesList viewMode="notes" />);
+    await waitFor(() => expect(NoteService.semanticSearch).toHaveBeenCalled());
+
+    // Find the delete button for "Alpha Note". It might be hidden by opacity.
+    // We need to find it within the context of the "Alpha Note" item.
+    const alphaNoteItem = screen.getByText('Alpha Note').closest('div[style*="position: absolute"]'); // Find the virtual item container
+    expect(alphaNoteItem).toBeInTheDocument();
+
+    // The delete button has aria-label="Delete note"
+    // querySelector might be needed if opacity makes it hard for getByRole within item
+    const deleteButton = alphaNoteItem?.querySelector('button[aria-label="Delete note"]');
+
+    if (!deleteButton) {
+      throw new Error("Delete button for Alpha Note not found. Check selectors or visibility simulation.");
+    }
+
+    fireEvent.click(deleteButton);
+
+    expect(mockConfirm).toHaveBeenCalledWith('Are you sure you want to delete this note?');
+    expect(mockStoreDeleteNote).toHaveBeenCalledWith('note1');
+
+    mockConfirm.mockRestore();
+  });
+
+  it('clears folder filter when "All Notes" is clicked', async () => {
+    // Setup with an initial folder filter
+    setupStore(mockNotes, mockFolders, '', { folderId: 'folder1' });
+    expect(useAppStore.getState().searchFilters.folderId).toBe('folder1'); // Verify initial state
+
+    render(<NotesList viewMode="notes" />);
+    // Expand folders section if it's collapsible and not default open
+    const folderCollapsibleTrigger = screen.getByRole('button', {name: /Folders/i});
+    if(folderCollapsibleTrigger.getAttribute('data-state') === 'closed') {
+        fireEvent.click(folderCollapsibleTrigger);
+    }
+
+    const allNotesButton = await screen.findByText('All Notes');
+    fireEvent.click(allNotesButton);
+
+    await waitFor(() => {
+      // Expect folderId to be undefined, and other filters potentially reset
+      expect(mockSetSearchFilters).toHaveBeenCalledWith(expect.objectContaining({ folderId: undefined }));
+      // Also check if text search was cleared as per handleFolderClick logic
+      expect(mockSetSearchQuery).toHaveBeenCalledWith(""); // Assuming setGlobalSearchQuery is mockSetSearchQuery here
+      // And tag filters cleared
+      // The actual call is setStoreSearchFilters(prev => ({ ...prev, tags: undefined }));
+      // So we check that the object passed to mockSetSearchFilters eventually has tags: undefined.
+      // This might be multiple calls, so we need to find the one that clears tags.
+      const calls = mockSetSearchFilters.mock.calls;
+      const callThatClearedTags = calls.find(callArgs => callArgs[0].hasOwnProperty('tags') && callArgs[0].tags === undefined);
+      expect(callThatClearedTags).toBeDefined();
+    });
+  });
+
+  it('clears ontology tag filter when "Clear Tag Filter" button is clicked', async () => {
+    // Setup with an initial tag filter
+    setupStore(mockNotes, mockFolders, '', { tags: ['#Tech'] });
+    expect(useAppStore.getState().searchFilters.tags).toEqual(['#Tech']);
+
+    render(<NotesList viewMode="notes" />);
+
+    // The "Clear Tag Filter" button should be visible
+    const clearTagFilterButton = await screen.findByRole('button', { name: /Clear Tag Filter/i });
+    expect(clearTagFilterButton).toBeInTheDocument();
+    fireEvent.click(clearTagFilterButton);
+
+    await waitFor(() => {
+      expect(mockSetSearchFilters).toHaveBeenCalledWith(expect.objectContaining({ tags: undefined }));
+    });
+  });
+
+  it('renders and filters direct messages in chats viewMode', async () => {
+    const mockDMs: DirectMessage[] = [
+      { id: 'dm1', from: 'userA', to: 'test-user', content: 'Hello from A', timestamp: new Date('2023-02-01'), encrypted: true },
+      { id: 'dm2', from: 'test-user', to: 'userB', content: 'Reply to B', timestamp: new Date('2023-02-02'), encrypted: true },
+      { id: 'dm3', from: 'userC', to: 'test-user', content: 'Another message', timestamp: new Date('2023-02-03'), encrypted: true },
+    ];
+    setupStore([], [], '', {}); // Clear notes, folders, initial filters
+    useAppStore.setState({ directMessages: mockDMs, displayedItemsForTest: mockDMs.slice().sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()) } as any);
+
+
+    render(<NotesList viewMode="chats" />);
+
+    // Check initial rendering of DMs (newest first)
+    // Assuming DM content is used for display text or part of it
+    expect(screen.getByText(/Another message/)).toBeInTheDocument(); // dm3
+    expect(screen.getByText(/Reply to B/)).toBeInTheDocument();     // dm2
+    expect(screen.getByText(/Hello from A/)).toBeInTheDocument();   // dm1
+
+    // Test filtering DMs
+    const searchInput = screen.getByPlaceholderText('Search all notes...'); // Placeholder is generic
+    fireEvent.change(searchInput, { target: { value: 'Reply' } });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    // The effect in NotesList for 'chats' mode will filter directMessages
+    // and update displayedItems. We need to simulate this for the virtualizer.
+    const filteredDMsForTest = mockDMs.filter(dm => dm.content.includes('Reply'));
+    useAppStore.setState({ displayedItemsForTest: filteredDMsForTest } as any);
+
+    // Forcing a re-render or waiting for the component's internal state update
+    // that leads to new displayedItems might be needed.
+    // The `useEffect` for search should re-filter and setDisplayedItems.
+    await waitFor(() => {
+      // Check that only "Reply to B" is rendered by the virtualizer mock
+      expect(screen.getByText(/Reply to B/)).toBeInTheDocument();
+      expect(screen.queryByText(/Hello from A/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Another message/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('displays "No notes found" message when search yields no results', async () => {
+    (NoteService.semanticSearch as vi.Mock).mockResolvedValue([]); // No results
+    useAppStore.setState({ displayedItemsForTest: [] } as any); // Simulate empty display
+
+    render(<NotesList viewMode="notes" />);
+    const searchInput = screen.getByPlaceholderText('Search all notes...');
+    fireEvent.change(searchInput, { target: { value: 'NonExistentSearchTerm' } });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    await waitFor(() => {
+      expect(NoteService.semanticSearch).toHaveBeenCalledWith('NonExistentSearchTerm', expect.anything(), expect.anything(), expect.anything());
+    });
+    expect(screen.getByText(/No notes found matching your criteria./i)).toBeInTheDocument();
+  });
+
+  it('displays "No notes yet" message when there are no notes at all', async () => {
+    setupStore([], [], '', {}); // No notes, no folders
+    (NoteService.semanticSearch as vi.Mock).mockResolvedValue([]);
+    useAppStore.setState({ displayedItemsForTest: [] } as any);
+
+    render(<NotesList viewMode="notes" />);
+    // Wait for semanticSearch to have been called due to initial component rendering effect
+    await waitFor(() => expect(NoteService.semanticSearch).toHaveBeenCalled());
+
+    expect(screen.getByText(/No notes yet./i)).toBeInTheDocument();
+    expect(screen.getByText(/Create your first note to get started!/i)).toBeInTheDocument();
+  });
+
+  it('displays "No chats yet" message in chats viewMode when no DMs', async () => {
+    setupStore([], [], '', {}); // No notes, no folders
+    useAppStore.setState({ directMessages: [], displayedItemsForTest: [] } as any);
+
+    render(<NotesList viewMode="chats" />);
+    // In 'chats' mode, the useEffect depends on [viewMode, debouncedSearchTerm, ..., directMessages]
+    // If directMessages is empty and searchTerm is empty, it will filter an empty list.
+    // No specific async call like semanticSearch to wait for here, but ensuring component has settled.
+    await act(async () => {
+      // Give a tick for any synchronous effects or state updates to settle.
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/No chats yet./i)).toBeInTheDocument();
+    expect(screen.getByText(/Direct messages will appear here./i)).toBeInTheDocument();
+  });
+
 });

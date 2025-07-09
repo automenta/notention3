@@ -1,6 +1,6 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { AppState, Note, OntologyTree, UserProfile, Folder, NotentionTemplate, SearchFilters, Match, DirectMessage, NostrEvent } from '../../shared/types';
+import { AppState, Note, OntologyTree, UserProfile, Folder, NotentionTemplate, SearchFilters, Match, DirectMessage, NostrEvent, Contact } from '../../shared/types';
 import { DBService } from '../services/db';
 import { FolderService } from '../services/FolderService';
 import { OntologyService } from '../services/ontology'; // Added OntologyService import
@@ -492,10 +492,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // updateUserProfile is fine, no direct sync implications unless specific fields were synced.
-  updateUserProfile: async (profile: UserProfile) => {
-    await DBService.saveUserProfile(profile);
-    set({ userProfile: profile });
-  },
+  
 
   createFolder: async (name: string, parentId?: string) => {
     try {
@@ -768,7 +765,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (providedSk) { // If a private key is provided, use it (and derive public key if not also provided)
         skToStore = providedSk;
         pkToStore = providedPk || nostrService.getPublicKey(providedSk);
-        if (!pkToStore) { // Should not happen if sk is valid
+        if (!pkToStore) {
             throw new Error("Could not derive public key from provided private key.");
         }
       } else { // No private key provided, generate new ones
@@ -1371,28 +1368,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
               await DBService.removeNoteFromSyncQueue(op.noteId);
               continue;
             }
-            const noteToSync = await DBService.getNote(op.noteId); // Get the latest version from DB
-            if (noteToSync) {
-              // Check against remote version again if it exists from the fetch above
-              const correspondingRemoteNote = remoteNotes.find(rn => rn.id === noteToSync.id);
-              if (correspondingRemoteNote && new Date(noteToSync.updatedAt) < new Date(correspondingRemoteNote.updatedAt)) {
-                console.log(`Skipping publish of local note ${noteToSync.id} as remote is newer.`);
-                await DBService.removeNoteFromSyncQueue(op.noteId);
-                continue;
+            console.log(`Publishing pending local note ${op.noteId} for sync.`);
+            const publishedEventIds = await nostrService.publishNoteForSync(noteToSync, relays);
+            if (publishedEventIds.length > 0 && publishedEventIds[0]) {
+              if (noteToSync.nostrSyncEventId !== publishedEventIds[0]) {
+                const noteWithSyncId = { ...noteToSync, nostrSyncEventId: publishedEventIds[0] };
+                await DBService.saveNote(noteWithSyncId); // Save to DB with new/updated sync ID
+                set(s => ({ notes: { ...s.notes, [noteToSync.id]: noteWithSyncId } })); // Update store
               }
-              console.log(`Publishing pending local note ${op.noteId} for sync.`);
-              const publishedEventIds = await nostrService.publishNoteForSync(noteToSync, relays);
-              if (publishedEventIds.length > 0 && publishedEventIds[0]) {
-                if (noteToSync.nostrSyncEventId !== publishedEventIds[0]) {
-                  const noteWithSyncId = { ...noteToSync, nostrSyncEventId: publishedEventIds[0] };
-                  await DBService.saveNote(noteWithSyncId); // Save to DB with new/updated sync ID
-                  set(s => ({ notes: { ...s.notes, [noteToSync.id]: noteWithSyncId } })); // Update store
-                }
-                await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
-              } else {
-                console.warn(`Failed to publish pending note ${op.noteId} during sync. Will retry later.`);
-                // Note: If publish fails, it remains in the queue. No explicit re-add needed here.
-              }
+              await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+            } else {
+              console.warn(`Failed to publish pending note ${op.noteId} during sync. Will retry later.`);
+              // Note: If publish fails, it remains in the queue. No explicit re-add needed here.
             }
           } else if (op.action === 'delete') {
             const eventIdToDelete = op.nostrEventId || (await DBService.getNote(op.noteId))?.nostrSyncEventId;
@@ -1469,52 +1456,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  updateUserProfile: async (profileUpdates: Partial<UserProfile>) => {
-    const currentProfile = get().userProfile;
-
-    // Define default preferences to ensure all fields are present
-    const defaultPreferences = {
-      theme: 'system' as const, // Use 'as const' for literal types
-      aiEnabled: false,
-      defaultNoteStatus: 'draft' as const,
-      ollamaApiEndpoint: '',
-      geminiApiKey: '',
-      aiMatchingSensitivity: 0.7,
-    };
-
-    const defaultPrivacySettings = {
-      sharePublicNotesGlobally: false,
-      shareTagsWithPublicNotes: true,
-      shareValuesWithPublicNotes: true,
-    };
-
-    const defaultBaseProfile = {
-        nostrPubkey: '',
-        sharedTags: [],
-        nostrRelays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social'], // Default relays if none exist
-        preferences: defaultPreferences,
-        privacySettings: defaultPrivacySettings,
-    };
-
-    const baseProfile = currentProfile || defaultBaseProfile;
-
-    const updatedProfile = {
-      ...baseProfile, // Start with a complete base (either current or default)
-      ...profileUpdates, // Apply incoming updates
-      preferences: {
-        ...baseProfile.preferences, // Ensure all preference fields from base are carried over
-        ...(profileUpdates.preferences || {}), // Apply specific preference updates
-      },
-      privacySettings: {
-        ...baseProfile.privacySettings, // Ensure all privacy fields from base are carried over
-        ...(profileUpdates.privacySettings || {}), // Apply specific privacy updates
-      },
-      nostrRelays: profileUpdates.nostrRelays || baseProfile.nostrRelays, // Preserve or update relays
-    };
-
-    await DBService.saveUserProfile(updatedProfile);
-    set({ userProfile: updatedProfile });
-  },
+  
 
   sendDirectMessage: async (recipientPk: string, content: string) => {
     const { userProfile, nostrRelays, addDirectMessage } = get();
@@ -1724,18 +1666,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
 
-}));
-
-// Add matchType to Match interface in shared/types.ts
-// export interface Match {
-//   ...
-//   matchType?: 'nostr' | 'embedding';
-// }
-// This comment is a reminder to update shared/types.ts if not done already.
-// It has been done in a previous step implicitly by adding localNoteId,
-// but explicitly adding matchType would be clearer.
-// For now, the presence of localNoteId can signify an embedding match.
-
   addContact: async (contact: Contact) => {
     const { userProfile, updateUserProfile } = get();
     if (!userProfile) return;
@@ -1774,3 +1704,4 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
     await updateUserProfile({ ...userProfile, contacts: updatedContacts });
   },
+}));

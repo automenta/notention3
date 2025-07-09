@@ -21,5 +21,6 @@ export default defineConfig({
     },
     testTimeout: 600000, // 10 minutes per test file
     hookTimeout: 600000, // 10 minutes for hooks per test file
+    exclude: ['tests-e2e/**'],
   },
 });

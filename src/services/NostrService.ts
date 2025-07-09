@@ -1,6 +1,11 @@
 import {
-  generatePrivateKey, getPublicKey, nip04, Event, UnsignedEvent, getEventHash, signEvent, SimplePool, Filter
+  SimplePool, nip04, Event, UnsignedEvent, getEventHash, signEvent, Filter
 } from 'nostr-tools';
+import {
+  getPublicKey
+} from 'nostr-tools/pure';
+import { generateSecretKey } from 'nostr-tools/pure';
+import { bytesToHex } from '@noble/hashes/utils';
 import { UserProfile, Note, NostrUserProfile, RelayDict } from '../../shared/types'; // Assuming NostrUserProfile and RelayDict might be needed
 import { DBService } from './db';
 
@@ -29,9 +34,9 @@ export class NostrService {
    * Does not automatically store it. Call storeKeyPair for that.
    */
   public generateNewKeyPair(): { privateKey: string; publicKey: string } {
-    const sk = generatePrivateKey();
+    const sk = generateSecretKey();
     const pk = getPublicKey(sk);
-    return { privateKey: sk, publicKey: pk };
+    return { privateKey: bytesToHex(sk), publicKey: pk };
   }
 
   /**

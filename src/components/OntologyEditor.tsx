@@ -95,14 +95,26 @@ export function OntologyEditor() {
     if (!newNodeLabel.trim()) return;
 
     const newNode = OntologyService.createNode(newNodeLabel, newNodeParentId);
-    const newOntology = OntologyService.addNode(ontology, newNode);
+    // Optimistically prepare the new ontology state for UI update
+    const newOntologyState = OntologyService.addNode(ontology, newNode);
 
-    await updateOntology(newOntology); // Assumes updateOntology updates localforage via store
-    setStoreOntology(newOntology); // Update Zustand store
+    try {
+      await updateOntology(newOntologyState); // Attempt to save to DB via store action
+      setStoreOntology(newOntologyState); // Update Zustand store state upon successful save
 
-    setNewNodeLabel("");
-    setNewNodeParentId(undefined);
-    setIsAddDialogOpen(false);
+      setNewNodeLabel("");
+      setNewNodeParentId(undefined);
+      setIsAddDialogOpen(false);
+      toast.success(`Concept "${newNode.label}" added successfully.`);
+    } catch (error: any) {
+      console.error("Failed to add concept:", error);
+      toast.error("Failed to add concept.", { description: error.message || "Could not save to database." });
+      // Do not clear inputs or close dialog on error, so user can retry or correct.
+      // The store state (ontology) should also not be updated with newOntologyState if save failed.
+      // The mocked setStoreOntology in test would need to be conditional or not called on error path.
+      // However, the actual setStoreOntology is called by updateOntology on success in the real store.
+      // Here, we ensure UI reflects that the operation was attempted but failed.
+    }
   };
 
   const handleDeleteNode = async (nodeId: string) => {

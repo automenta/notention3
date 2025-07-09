@@ -517,4 +517,44 @@ describe('NotesList', () => {
       expect(screen.queryByText('#WebApp')).not.toBeInTheDocument();
     });
   });
+
+  it('calls createNewNote store action when "New Note" button is clicked', async () => {
+    const mockCreateNewNote = vi.fn().mockResolvedValue({ id: 'newly-created-note' });
+    useAppStore.setState({ createNewNote: mockCreateNewNote });
+
+    render(<NotesList viewMode="notes" />);
+    const newNoteButton = screen.getByRole('button', { name: /New Note/i });
+    fireEvent.click(newNoteButton);
+
+    await waitFor(() => {
+      expect(mockCreateNewNote).toHaveBeenCalled();
+    });
+    // Optionally, check if setCurrentNote was called with the new note's ID
+    // This depends on the implementation of handleCreateNewNote
+    // expect(mockSetCurrentNote).toHaveBeenCalledWith('newly-created-note');
+  });
+
+  it('opens "Add Folder" dialog and calls createNewFolder', async () => {
+    const mockCreateNewFolder = vi.fn().mockResolvedValue({ id: 'newly-created-folder' });
+    useAppStore.setState({ createNewFolder: mockCreateNewFolder });
+
+    render(<NotesList viewMode="notes" />);
+    // Expand folders to make "Add Folder" button visible
+    const folderCollapsibleTrigger = screen.getByRole('button', {name: /Folders/i});
+    fireEvent.click(folderCollapsibleTrigger);
+
+    const addFolderButton = await screen.findByRole('button', { name: /Add Folder/i });
+    fireEvent.click(addFolderButton);
+
+    // Dialog opens, fill in the folder name
+    const folderNameInput = await screen.findByLabelText(/Folder Name/i); // Assuming label exists
+    fireEvent.change(folderNameInput, { target: { value: 'New Test Folder' } });
+
+    const saveFolderButton = screen.getByRole('button', { name: 'Create Folder' }); // Name of button in dialog
+    fireEvent.click(saveFolderButton);
+
+    await waitFor(() => {
+      expect(mockCreateNewFolder).toHaveBeenCalledWith('New Test Folder', undefined); // Name, parentId
+    });
+  });
 });

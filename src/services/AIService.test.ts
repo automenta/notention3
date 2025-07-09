@@ -179,8 +179,17 @@ describe('AIService', () => {
           const result = await (aiService as any)[method](...args);
           expect(mockGeminiInstance.invoke).toHaveBeenCalled();
           expect(result).toEqual(typeof mockReturn === 'string' && method !== 'getSummarization' ? JSON.parse(mockReturn) : mockReturn);
-          if (method === 'getAutoTags') {
+
+          // Check captured prompt messages for specific content
+          expect(capturedPromptMessages.length).toBeGreaterThan(0);
+          if (method === 'getOntologySuggestions') {
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in knowledge organization.");
+            expect(capturedPromptMessages[1].prompt.template).toContain("Existing Ontology:");
+          } else if (method === 'getAutoTags') {
             expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in semantic tagging.");
+            expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
+          } else if (method === 'getSummarization') {
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in summarizing text.");
             expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
           }
         });
@@ -192,12 +201,17 @@ describe('AIService', () => {
           const result = await (aiService as any)[method](...args);
           expect(mockOllamaInstance.invoke).toHaveBeenCalled();
           expect(result).toEqual(typeof mockReturn === 'string' && method !== 'getSummarization' ? JSON.parse(mockReturn) : mockReturn);
-          if (method === 'getAutoTags') {
-            // Check captured prompt messages for specific content
-            expect(capturedPromptMessages.length).toBeGreaterThan(0);
-            // Example: Check system message content
+
+          // Check captured prompt messages for specific content
+          expect(capturedPromptMessages.length).toBeGreaterThan(0);
+          if (method === 'getOntologySuggestions') {
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in knowledge organization.");
+            expect(capturedPromptMessages[1].prompt.template).toContain("Existing Ontology:");
+          } else if (method === 'getAutoTags') {
             expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in semantic tagging.");
-            // Example: Check human message template structure
+            expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
+          } else if (method === 'getSummarization') {
+            expect(capturedPromptMessages[0].prompt.template).toContain("You are an expert in summarizing text.");
             expect(capturedPromptMessages[1].prompt.template).toContain("Note Content:");
           }
         });

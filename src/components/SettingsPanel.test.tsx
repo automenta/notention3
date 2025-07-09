@@ -493,4 +493,53 @@ describe('SettingsPanel', () => {
     expect(global.alert).toHaveBeenCalledWith('Data imported successfully! Please refresh the page.');
     FileReaderMock.mockRestore();
   });
+
+  it('disables AI model configuration inputs when AI is globally disabled', () => {
+    useAppStore.setState({ userProfile: getMockUserProfile({ aiEnabled: false }) });
+    render(<SettingsPanel />);
+
+    expect(screen.getByLabelText(/Ollama API Endpoint/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Ollama Chat Model/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Ollama Embedding Model/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Google Gemini API Key/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Gemini Chat Model/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Gemini Embedding Model/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Preferred AI Provider/i)).toBeDisabled();
+    // The AI matching sensitivity slider might also be disabled
+    // expect(screen.getByLabelText(/AI Matching Sensitivity/i)).toBeDisabled();
+    // Check if it exists first, as it might be conditionally rendered too.
+    const sensitivitySlider = screen.queryByLabelText(/AI Matching Sensitivity/i);
+    if (sensitivitySlider) {
+        expect(sensitivitySlider).toBeDisabled();
+    }
+  });
+
+  it('shows an error if generating new Nostr keys fails', async () => {
+    mockGenerateAndStoreNostrKeys.mockRejectedValueOnce(new Error('Key generation failed'));
+    render(<SettingsPanel />);
+
+    const generateKeysButton = screen.getByRole('button', { name: /Generate New Keys/i });
+    const mockConfirmGenerate = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(generateKeysButton);
+    mockConfirmGenerate.mockRestore(); // Restore after the first confirm
+
+    await waitFor(() => {
+      expect(mockGenerateAndStoreNostrKeys).toHaveBeenCalled();
+    });
+    expect(global.alert).toHaveBeenCalledWith('Error generating new keys: Key generation failed');
+    // Ensure backup modal does not show
+    expect(screen.queryByText('IMPORTANT: Back Up Your New Private Key')).not.toBeInTheDocument();
+  });
+
+  it('does not call addNostrRelay if relay URL is invalid', () => {
+    render(<SettingsPanel />);
+    const relayInput = screen.getByPlaceholderText('wss://your.relay.com');
+    const addButton = screen.getByRole('button', { name: /Add/i });
+
+    fireEvent.change(relayInput, { target: { value: 'http://invalid.relay.com' } }); // Invalid prefix
+    fireEvent.click(addButton);
+
+    expect(mockAddNostrRelay).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith("Invalid relay URL. Must start with wss:// or ws://");
+  });
 });

@@ -44,46 +44,58 @@ export class NoteService {
   static async semanticSearch(
     query: string,
     ontology: OntologyTree,
-    filters: SearchFilters = {}, // Default to empty object
+    filters: SearchFilters = {},
     allNotes?: Note[]
   ): Promise<Note[]> {
-    // PERFORMANCE TODO: If `allNotes` is not provided, `DBService.getAllNotes()` loads all notes from IndexedDB into memory.
-    // For very large datasets, this initial load and subsequent client-side filtering can be slow.
-    // Consider implementing database-level indexing and querying if performance with many notes is critical.
     const sourceNotes = allNotes || await DBService.getAllNotes();
     const trimmedQuery = query.trim();
     const normalizedQuery = trimmedQuery.toLowerCase();
 
-    // Pre-calculate semantic tags for filtering if filter.tags are present
-    const filterSemanticTagsSet = new Set<string>();
-    if (filters.tags && filters.tags.length > 0) {
-      filters.tags.forEach(originalFilterTag => {
-        OntologyService.getSemanticMatches(ontology, originalFilterTag)
-          .forEach(match => filterSemanticTagsSet.add(match.toLowerCase()));
-      });
+    const { userProfile } = useAppStore.getState();
+    const aiEnabled = userProfile?.preferences.aiEnabled ?? false;
+    const aiMatchingSensitivity = userProfile?.preferences.aiMatchingSensitivity ?? 0.7;
+
+    let queryEmbedding: number[] | null = null;
+    if (aiEnabled && trimmedQuery && aiService.isAIEnabled()) {
+      try {
+        queryEmbedding = await aiService.getEmbeddingVector(trimmedQuery);
+      } catch (error) {
+        console.error("Failed to generate query embedding:", error);
+        queryEmbedding = null;
+      }
     }
 
-    // Pre-calculate semantic tags for text search if query is a tag
+    const filterSemanticTagsSet = new Set<string>();
+    if (filters.tags && filters.tags.length > 0) {
+      filters.tags.forEach(originalFilterTag =>
+        OntologyService.getSemanticMatches(ontology, originalFilterTag)
+          .forEach(match => filterSemanticTagsSet.add(match.toLowerCase()))
+      );
+    }
+
     const textSearchSemanticTagsSet = new Set<string>();
     if (normalizedQuery.startsWith('#') || normalizedQuery.startsWith('@')) {
-      OntologyService.getSemanticMatches(ontology, trimmedQuery) // Use original case for matching
+      OntologyService.getSemanticMatches(ontology, trimmedQuery)
         .forEach(match => textSearchSemanticTagsSet.add(match.toLowerCase()));
     }
 
-    return sourceNotes.filter(note => {
-      // Apply structured filters first (early exit)
+    const matchedNotes: Array<Note & { searchScore?: number }> = [];
+
+    for (const note of sourceNotes) {
+      let matchesFilters = true;
+      // Apply structured filters first
       if (filters.status && note.status !== filters.status) {
-        return false;
+        matchesFilters = false;
       }
-      if (filters.folderId && note.folderId !== filters.folderId) {
-        return false;
+      if (matchesFilters && filters.folderId && note.folderId !== filters.folderId) {
+        matchesFilters = false;
       }
-      if (filterSemanticTagsSet.size > 0) {
+      if (matchesFilters && filterSemanticTagsSet.size > 0) {
         if (!note.tags || !note.tags.some(noteTag => filterSemanticTagsSet.has(noteTag.toLowerCase()))) {
-          return false;
+          matchesFilters = false;
         }
       }
-      if (filters.values) {
+      if (matchesFilters && filters.values) {
         for (const [key, value] of Object.entries(filters.values)) {
           if (value === undefined || value === null || value === '') continue;
           const filterKeyLower = key.toLowerCase();
@@ -91,11 +103,12 @@ export class NoteService {
           if (!note.values || !Object.entries(note.values).some(([noteValKey, noteVal]) =>
             noteValKey.toLowerCase() === filterKeyLower && noteVal.toLowerCase().includes(filterValueLower)
           )) {
-            return false; // Note does not match this value filter
+            matchesFilters = false;
+            break;
           }
         }
       }
-      if (filters.fields) {
+      if (matchesFilters && filters.fields) {
         for (const [key, value] of Object.entries(filters.fields)) {
           if (value === undefined || value === null || value === '') continue;
           const filterKeyLower = key.toLowerCase();
@@ -103,36 +116,64 @@ export class NoteService {
           if (!note.fields || !Object.entries(note.fields).some(([noteFieldKey, noteFieldValue]) =>
             noteFieldKey.toLowerCase() === filterKeyLower && String(noteFieldValue).toLowerCase().includes(filterValueLower)
           )) {
-            return false; // Note does not match this field filter
+            matchesFilters = false;
+            break;
           }
         }
       }
 
-      // If there's no full-text query after passing structured filters, it's a match
-      if (!normalizedQuery) {
-        return true;
+      if (!matchesFilters) {
+        continue; // Skip to next note if it doesn't pass strict filters
       }
 
-      // Apply full-text search logic
-      if (note.title.toLowerCase().includes(normalizedQuery) || note.content.toLowerCase().includes(normalizedQuery)) {
-        return true;
+      // If no full-text query after passing structured filters, it's a match
+      if (!normalizedQuery) {
+        matchedNotes.push(note);
+        continue;
       }
+
+      let textMatchScore = 0;
+      if (note.title.toLowerCase().includes(normalizedQuery)) textMatchScore += 2; // Higher weight for title
+      if (note.content.toLowerCase().includes(normalizedQuery)) textMatchScore += 1;
       if (textSearchSemanticTagsSet.size > 0 && note.tags && note.tags.some(tag => textSearchSemanticTagsSet.has(tag.toLowerCase()))) {
-        return true;
+        textMatchScore += 1.5; // Semantic tag match
       }
       if (note.values && Object.entries(note.values).some(([key, value]) =>
         key.toLowerCase().includes(normalizedQuery) || value.toLowerCase().includes(normalizedQuery)
       )) {
-        return true;
+        textMatchScore += 0.5;
       }
       if (note.fields && Object.entries(note.fields).some(([key, value]) =>
         key.toLowerCase().includes(normalizedQuery) || String(value).toLowerCase().includes(normalizedQuery)
       )) {
-        return true;
+        textMatchScore += 0.5;
       }
 
-      return false; // Does not match full-text query
-    });
+      let embeddingSimilarityScore = 0;
+      if (queryEmbedding && note.embedding && note.embedding.length > 0) {
+        const similarity = this.cosineSimilarity(queryEmbedding, note.embedding);
+        if (similarity >= aiMatchingSensitivity) {
+          embeddingSimilarityScore = similarity * 2; // Weight embedding similarity
+        }
+      }
+
+      // Combine scores: A note is included if it has any text match OR a strong embedding match.
+      // The score helps in ranking.
+      const totalScore = textMatchScore + embeddingSimilarityScore;
+
+      if (totalScore > 0) {
+        // Check if note is already added to avoid duplicates if logic changes
+        if (!matchedNotes.find(n => n.id === note.id)) {
+             matchedNotes.push({ ...note, searchScore: totalScore });
+        }
+      }
+    }
+
+    // Sort by score in descending order
+    matchedNotes.sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0));
+
+    // Remove searchScore before returning
+    return matchedNotes.map(({ searchScore, ...note }) => note);
   }
 
   // Basic CRUD operations

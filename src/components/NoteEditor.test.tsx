@@ -579,4 +579,29 @@ describe('NoteEditor', () => {
     });
   });
 
+  it('shows non-editing view when isEditing is false', () => {
+    useAppStore.setState(state => ({ ...state, isEditing: false }));
+    render(<NoteEditor />);
+    expect(screen.getByText('No note selected')).toBeInTheDocument(); // Or whatever the non-editing view shows
+    expect(screen.queryByTestId('tiptap-editor')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Save/i })).toBeNull();
+  });
+
+  it('handles AI auto-tag failure gracefully', async () => {
+    vi.mocked(aiService.getAutoTags).mockRejectedValueOnce(new Error('AI Network Error'));
+    render(<NoteEditor />);
+    const autoTagButton = screen.getByRole('button', { name: /Auto-tag/i });
+    fireEvent.click(autoTagButton);
+
+    await waitFor(() => {
+      expect(aiService.getAutoTags).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Auto-tagging failed.", { description: 'AI Network Error' });
+    });
+    expect(mockUpdateNote).not.toHaveBeenCalledWith(mockNote.id, expect.objectContaining({
+      tags: expect.arrayContaining(['#AI', '#Test']), // Ensure tags are not updated on failure
+    }));
+  });
+
 });

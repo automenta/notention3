@@ -1755,17 +1755,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const newContact = { ...contact, lastContact: contact.lastContact || new Date() };
     const updatedContacts = [...existingContacts, newContact];
     await updateUserProfile({ ...userProfile, contacts: updatedContacts });
-  },
+  }, // Ensured comma
 
-  removeContact: async (pubkey: string) => {
+  removeContact: async (pubkey: string) => { // Re-affirming this structure
     const { userProfile, updateUserProfile } = get();
     if (!userProfile || !userProfile.contacts) return;
 
     const updatedContacts = userProfile.contacts.filter(c => c.pubkey !== pubkey);
     await updateUserProfile({ ...userProfile, contacts: updatedContacts });
-  },
+  }, // Ensured comma
 
-  updateContactAlias: async (pubkey: string, alias: string) => {
+  updateContactAlias: async (pubkey: string, alias: string) => { // Ensuring this starts correctly
     const { userProfile, updateUserProfile } = get();
     if (!userProfile || !userProfile.contacts) return;
 

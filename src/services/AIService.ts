@@ -36,8 +36,6 @@ export class AIService {
   private initializeModels() {
     const { userProfile } = useAppStore.getState(); // Access store state directly
 
-    const { userProfile } = useAppStore.getState(); // Access store state directly
-
     if (userProfile?.preferences.aiEnabled) {
       const ollamaApiEndpoint = userProfile.preferences.ollamaApiEndpoint;
       const ollamaModel = userProfile.preferences.ollamaEmbeddingModel || "nomic-embed-text"; // Default embedding model

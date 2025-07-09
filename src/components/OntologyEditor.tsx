@@ -463,8 +463,8 @@ export function OntologyEditor() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => document.getElementById('import-ontology-file')?.click()}>
                 className="text-xs px-2 h-8"
+                onClick={() => document.getElementById('import-ontology-file')?.click()}
               >
                 Import
               </Button>
@@ -603,11 +603,11 @@ export function OntologyEditor() {
             </div>
           </SortableContext>
           <DragOverlay>
-            {activeNode ? (
+            {activeNode ?
               <div className="p-2 rounded bg-primary text-primary-foreground shadow-xl opacity-90">
                 <Badge variant="default">{activeNode.label}</Badge>
               </div>
-            ) : null}
+            : null}
           </DragOverlay>
         </div>
         )}

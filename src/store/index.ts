@@ -1277,49 +1277,47 @@ export const useAppStore = create<AppStore>((set, get) => ({
               await DBService.removeNoteFromSyncQueue(op.noteId);
               continue;
             }
-            console.log(`Publishing pending local note ${op.noteId} for sync.`);
-            await nostrService.publishNoteForSync(noteToSync, relays);
-            await DBService.removeNoteFromSyncQueue(op.noteId);
-          }
-        } else if (op.action === 'delete') {
-      if (op.action === 'save') {
-        const noteToSync = await DBService.getNote(op.noteId);
-        if (noteToSync) {
-          const correspondingRemoteNote = remoteNotes.find(rn => rn.id === noteToSync.id);
-          if (correspondingRemoteNote && new Date(noteToSync.updatedAt) < new Date(correspondingRemoteNote.updatedAt)) {
-            console.log(`Skipping publish of local note ${noteToSync.id} as remote is newer.`);
-            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId consistently
-            continue;
-          }
-          console.log(`Publishing pending local note ${op.noteId} for sync.`);
-          const publishedEventIds = await nostrService.publishNoteForSync(noteToSync, relays);
-          if (publishedEventIds.length > 0 && publishedEventIds[0]) {
-            if (noteToSync.nostrSyncEventId !== publishedEventIds[0]) {
-              const noteWithSyncId = { ...noteToSync, nostrSyncEventId: publishedEventIds[0] };
-              await DBService.saveNote(noteWithSyncId); // Save to DB with new/updated sync ID
-              set(s => ({ notes: { ...s.notes, [noteToSync.id]: noteWithSyncId } })); // Update store
+            const noteToSync = await DBService.getNote(op.noteId); // Get the latest version from DB
+            if (noteToSync) {
+              // Check against remote version again if it exists from the fetch above
+              const correspondingRemoteNote = remoteNotes.find(rn => rn.id === noteToSync.id);
+              if (correspondingRemoteNote && new Date(noteToSync.updatedAt) < new Date(correspondingRemoteNote.updatedAt)) {
+                console.log(`Skipping publish of local note ${noteToSync.id} as remote is newer.`);
+                await DBService.removeNoteFromSyncQueue(op.noteId);
+                continue;
+              }
+              console.log(`Publishing pending local note ${op.noteId} for sync.`);
+              const publishedEventIds = await nostrService.publishNoteForSync(noteToSync, relays);
+              if (publishedEventIds.length > 0 && publishedEventIds[0]) {
+                if (noteToSync.nostrSyncEventId !== publishedEventIds[0]) {
+                  const noteWithSyncId = { ...noteToSync, nostrSyncEventId: publishedEventIds[0] };
+                  await DBService.saveNote(noteWithSyncId); // Save to DB with new/updated sync ID
+                  set(s => ({ notes: { ...s.notes, [noteToSync.id]: noteWithSyncId } })); // Update store
+                }
+                await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+              } else {
+                console.warn(`Failed to publish pending note ${op.noteId} during sync. Will retry later.`);
+                // Note: If publish fails, it remains in the queue. No explicit re-add needed here.
+              }
             }
-            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
-          } else {
-            console.warn(`Failed to publish pending note ${op.noteId} during sync. Will retry later.`);
+          } else if (op.action === 'delete') {
+            const eventIdToDelete = op.nostrEventId || (await DBService.getNote(op.noteId))?.nostrSyncEventId;
+            if (eventIdToDelete) {
+              console.log(`Processing pending Kind 5 deletion for Nostr event ID: ${eventIdToDelete} (local note ID: ${op.noteId}).`);
+              try {
+                await nostrService.publishDeletionEvent([eventIdToDelete], "Note deleted by user during sync.", relays);
+                await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+              } catch (e) {
+                console.warn(`Failed to publish Kind 5 for event ${eventIdToDelete} during sync. Will retry later.`, e);
+                // Note: If publish fails, it remains in the queue.
+              }
+            } else {
+              console.log(`Skipping deletion for note ${op.noteId} as no Nostr event ID was found. Removing from queue.`);
+              await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+            }
           }
-        }
-      } else if (op.action === 'delete') {
-        const eventIdToDelete = op.nostrEventId || (await DBService.getNote(op.noteId))?.nostrSyncEventId;
-        if (eventIdToDelete) {
-          console.log(`Processing pending Kind 5 deletion for Nostr event ID: ${eventIdToDelete} (local note ID: ${op.noteId}).`);
-          try {
-            await nostrService.publishDeletionEvent([eventIdToDelete], "Note deleted by user during sync.", relays);
-            await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
-          } catch (e) {
-            console.warn(`Failed to publish Kind 5 for event ${eventIdToDelete} during sync. Will retry later.`, e);
-          }
-        } else {
-          console.log(`Skipping deletion for note ${op.noteId} as no Nostr event ID was found. Removing from queue.`);
-          await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
-        }
-        }
-      }
+        } // Closes for...of pendingNoteOps
+      } // Closes main try block for sync operations (this was missing in the original problem description)
 
       recordSyncTime(currentSyncTime); // Update last sync time
       // toast.success("Sync Complete", { id: "nostr-sync", description: "Data synced with Nostr relays." });
@@ -1568,10 +1566,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     setError('network', undefined);
 
     try {
-      const allNotes = Object.values(notes);
-      const similarNoteResults = await NoteService.findSimilarNotesByEmbedding(
-        targetNote,
-        allNotes,
+      // Use the new service method that fetches all notes internally
+      const similarNoteResults = await NoteService.getSimilarNotesGlobally(
+        targetNote.id, // Pass targetNoteId
         similarityThreshold
       );
 

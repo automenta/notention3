@@ -561,6 +561,24 @@ export function NoteEditor() {
                 {isSummarizing ? <LoadingSpinner className="h-4 w-4" /> : <FileText size={16} />}
                  <span className="ml-1 hidden sm:inline">Summarize</span>
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (currentNoteId) {
+                    useAppStore.getState().findAndSetEmbeddingMatches(currentNoteId);
+                    useAppStore.getState().setSidebarTab("network"); // Switch to network panel to see results
+                    toast.info("Searching for similar notes by content...");
+                  } else {
+                    toast.error("Please select a note first.");
+                  }
+                }}
+                disabled={!currentNoteId || !currentNote?.embedding || currentNote.embedding.length === 0}
+                title="Find similar notes by content (uses AI Embeddings)"
+              >
+                <Wand2 size={16} />
+                <span className="ml-1 hidden sm:inline">Similar Content</span>
+              </Button>
               <div className="w-px h-6 bg-border mx-1" />
             </>
           )}

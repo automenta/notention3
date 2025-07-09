@@ -451,7 +451,7 @@ export function OntologyEditor() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => document.getElementById('import-ontology-file')?.click()}
+                onClick={() => document.getElementById('import-ontology-file')?.click()}>
                 className="text-xs px-2 h-8"
               >
                 Import

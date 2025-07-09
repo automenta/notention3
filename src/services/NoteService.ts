@@ -273,4 +273,33 @@ export class NoteService {
 
     return similarNotes;
   }
+
+  /**
+   * Finds notes similar to a given note ID by fetching all notes and using embedding vectors.
+   * @param targetNoteId - The ID of the note to find similar matches for.
+   * @param similarityThreshold - The minimum cosine similarity score to consider a match.
+   * @returns A promise that resolves to an array of matched notes, sorted by similarity.
+   */
+  static async getSimilarNotesGlobally(
+    targetNoteId: string,
+    similarityThreshold: number = 0.7
+  ): Promise<Array<{ note: Note; similarity: number }>> {
+    const targetNote = await DBService.getNote(targetNoteId);
+    if (!targetNote || !targetNote.embedding || targetNote.embedding.length === 0) {
+      console.warn(`Target note ${targetNoteId} not found or has no embedding.`);
+      return [];
+    }
+
+    const { userProfile } = useAppStore.getState();
+    if (!userProfile?.preferences.aiEnabled) {
+      console.warn("AI features are not enabled. Cannot perform embedding-based similarity search.");
+      return [];
+    }
+
+    const allNotes = await DBService.getAllNotes();
+    // Filter out the targetNote itself from the list of notes to compare against
+    const otherNotes = allNotes.filter(note => note.id !== targetNoteId);
+
+    return this.findSimilarNotesByEmbedding(targetNote, otherNotes, similarityThreshold);
+  }
 }

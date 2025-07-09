@@ -300,4 +300,58 @@ describe('NoteService', () => {
       expect(results.length).toBeLessThanOrEqual(notesWithEmbeddings.length - 2); // Excludes target and noteD
     });
   });
+
+  describe('getSimilarNotesGlobally', () => {
+    const targetNoteWithEmbedding: Note = {
+      id: 'targetGlobal', title: 'Target Global', content: 'Content',
+      tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(),
+      embedding: [1, 0, 0]
+    };
+    const otherNotesForGlobalSearch: Note[] = [
+      { ...mockNotes[0], id: 'globalA', embedding: [0.8, 0.2, 0] }, // Similar
+      { ...mockNotes[1], id: 'globalB', embedding: [0, 0, 1] },   // Different
+      { ...mockNotes[2], id: 'globalC', embedding: [0.7, 0.1, 0.1] }, // Similar
+      { ...targetNoteWithEmbedding } // Target note itself, should be excluded from comparison
+    ];
+
+    beforeEach(() => {
+      // Mock DBService.getNote to return the target note
+      (DBService.getNote as vi.Mock).mockImplementation(async (id: string) => {
+        if (id === targetNoteWithEmbedding.id) return targetNoteWithEmbedding;
+        return null;
+      });
+      // Mock DBService.getAllNotes to return the list of notes for global search
+      (DBService.getAllNotes as vi.Mock).mockResolvedValue(otherNotesForGlobalSearch);
+      // Ensure AI is enabled for these tests
+      (useAppStore.getState as vi.Mock).mockReturnValue({ userProfile: { ...mockUserProfile, preferences: { ...mockUserProfile.preferences, aiEnabled: true } } });
+    });
+
+    it('should return similar notes from global list, excluding self', async () => {
+      const results = await NoteService.getSimilarNotesGlobally(targetNoteWithEmbedding.id, 0.6);
+      expect(DBService.getNote).toHaveBeenCalledWith(targetNoteWithEmbedding.id);
+      expect(DBService.getAllNotes).toHaveBeenCalled();
+      expect(results).toHaveLength(2);
+      expect(results.some(r => r.note.id === 'targetGlobal')).toBe(false); // Ensure target is not in results
+      expect(results[0].note.id).toBe('globalA'); // globalA should be most similar
+      expect(results[1].note.id).toBe('globalC');
+    });
+
+    it('should return empty array if target note is not found', async () => {
+      (DBService.getNote as vi.Mock).mockResolvedValue(null);
+      const results = await NoteService.getSimilarNotesGlobally('nonexistentId');
+      expect(results).toEqual([]);
+    });
+
+    it('should return empty array if target note has no embedding', async () => {
+      (DBService.getNote as vi.Mock).mockResolvedValue({ ...targetNoteWithEmbedding, embedding: undefined });
+      const results = await NoteService.getSimilarNotesGlobally(targetNoteWithEmbedding.id);
+      expect(results).toEqual([]);
+    });
+
+    it('should return empty array if AI features are disabled in preferences', async () => {
+      (useAppStore.getState as vi.Mock).mockReturnValue({ userProfile: { ...mockUserProfile, preferences: { ...mockUserProfile.preferences, aiEnabled: false } } });
+      const results = await NoteService.getSimilarNotesGlobally(targetNoteWithEmbedding.id);
+      expect(results).toEqual([]);
+    });
+  });
 });

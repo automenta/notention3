@@ -83,7 +83,10 @@
     "workbox-window": "^7.3.0",
     "zod": "^3.25.20",
     "zustand": "^5.0.6",
-    "langchain": "^0.2.11"
+    "langchain": "^0.2.11",
+    "@langchain/community": "^0.2.19",
+    "@langchain/google-genai": "^0.0.22",
+    "@tanstack/react-virtual": "^3.8.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",

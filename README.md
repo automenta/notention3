@@ -240,6 +240,3 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
 - Host on static CDN (e.g., Vercel) with Service Workers.
 - Connect to public Nostr relays (e.g., wss://relay.damus.io); guide for user-run relays.
 - Provide Ollama setup instructions for AI features.
-
-## Conclusion
-This is a privacy-focused PWA for semantic note-taking and decentralized collaboration. Its user-editable, shareable ontology enables powerful organization and matching via Nostr, with optional AI enhancements. This specification offers a clear, modular blueprint for developers to build a robust, accessible tool for global knowledge sharing.

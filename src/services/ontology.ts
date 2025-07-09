@@ -29,7 +29,7 @@ export class OntologyService {
     node: OntologyNode
   ): OntologyTree {
     const updatedNodes = { ...ontology.nodes, [node.id]: node };
-    let updatedRootIds = [...ontology.rootIds];
+    const updatedRootIds = [...ontology.rootIds];
 
     // If node has a parent, add it to parent's children
     if (node.parentId && updatedNodes[node.parentId]) {
@@ -72,7 +72,7 @@ export class OntologyService {
     }
 
     // Remove from root IDs
-    let updatedRootIds = ontology.rootIds.filter(id => id !== nodeId);
+    const updatedRootIds = ontology.rootIds.filter(id => id !== nodeId);
 
     // Move children to parent or root
     const children = this.getChildNodes(ontology, nodeId);

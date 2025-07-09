@@ -85,7 +85,7 @@ export function NotesList({ viewMode }: NotesListProps) {
       setIsLoading(true);
       if (viewMode === 'notes') {
         const results = await NoteService.semanticSearch(
-          localSearchTerm,
+          debouncedSearchTerm, // Use debounced term for search
           ontology,
           searchFilters,
           allNotes
@@ -97,8 +97,8 @@ export function NotesList({ viewMode }: NotesListProps) {
         });
         setDisplayedItems(sortedNotes);
       } else if (viewMode === 'chats') {
-        // Filter DMs based on localSearchTerm (e.g., search content or participant pubkey)
-        const lowerSearch = localSearchTerm.toLowerCase();
+        // Filter DMs based on debouncedSearchTerm
+        const lowerSearch = debouncedSearchTerm.toLowerCase(); // Use debounced term
         const filteredDms = directMessages.filter(dm =>
           dm.content.toLowerCase().includes(lowerSearch) ||
           dm.from.toLowerCase().includes(lowerSearch) ||

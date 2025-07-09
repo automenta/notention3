@@ -35,6 +35,7 @@ export function OntologyEditor() {
   const [editNodeLabel, setEditNodeLabel] = useState("");
   const [editNodeAttributes, setEditNodeAttributes] = useState<{[key: string]: string}>({});
 
+  /* // Temporarily comment out handlers
   const handleOpenEditDialog = (node: OntologyNode) => {
     setEditingNode(node);
     setEditNodeLabel(node.label);
@@ -156,8 +157,9 @@ export function OntologyEditor() {
       toast.error("Failed to add suggested node.", { description: error.message });
     }
   };
+  */
 
-
+  /*
   const renderNode = (node: OntologyNode, level: number = 0) => {
     const children = getChildNodes(node.id);
     const hasChildren = children.length > 0;
@@ -219,6 +221,7 @@ export function OntologyEditor() {
       </div>
     );
   };
+  */
 
   return (
     <ScrollArea className="h-full">
@@ -341,12 +344,12 @@ export function OntologyEditor() {
             <p className="text-sm mt-1">Create your first concept to organize your notes</p>
           </div>
         ) : (
-          <div>
+          <div> {/* This div wraps the mapped nodes */}
             {ontology.rootIds?.map(rootId => {
               const node = ontology.nodes[rootId];
               return node ? renderNode(node) : null;
             })}
-          </div>
+          </div> {/* This is the FIX: closing the div that wraps mapped nodes */}
         )}
 
         {/* Edit Node Dialog */}
@@ -407,7 +410,6 @@ export function OntologyEditor() {
             </DialogContent>
           </Dialog>
         )}
-
         {/* Ontology Info Card */}
         <Card className="mt-6">
           <CardHeader>

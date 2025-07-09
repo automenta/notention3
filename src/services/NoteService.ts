@@ -74,7 +74,7 @@ export class NoteService {
     }
 
     // Apply full-text search on the (potentially) pre-filtered notes
-    let textSearchSemanticTags = new Set<string>();
+    const textSearchSemanticTags = new Set<string>();
     if (trimmedQuery.startsWith('#') || trimmedQuery.startsWith('@')) {
       // Use original-cased trimmedQuery for semantic matching
       OntologyService.getSemanticMatches(ontology, trimmedQuery)

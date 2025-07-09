@@ -4,38 +4,57 @@ import { generatePrivateKey, getPublicKey, nip04, SimplePool } from 'nostr-tools
 import { Note } from '../../shared/types';
 
 // Mocks
+import { vi } from 'vitest'; // Ensure vi is imported if not already via describe etc.
+
+// Declare vars for mocks that will be used by the nostr-tools mock factory.
+// These need to be `var` to be hoisted as declarations, then assigned before `NostrService.ts` (and its SimplePool instantiation) is imported.
+var mockPublishResult: any;
+var mockSubInstance: any;
+var mockPool: any;
+
 vi.mock('./db'); // Mock DBService
 
-// Define mocks for nostr-tools components BEFORE vi.mock is called
-const mockPublishResult = Promise.resolve();
-const mockSubInstance = {
-  on: vi.fn(),
-  unsub: vi.fn(),
-};
-const mockPool = {
-  publish: vi.fn().mockReturnValue([mockPublishResult]),
-  sub: vi.fn().mockReturnValue(mockSubInstance),
-  list: vi.fn().mockResolvedValue([]), // Add list mock
-  get: vi.fn().mockResolvedValue(null),  // Add get mock
-  close: vi.fn(),
-};
-
+// Mock nostr-tools. This is hoisted.
 vi.mock('nostr-tools', async () => {
-  const actual = await vi.importActual('nostr-tools') as any;
+  const actual = await vi.importActual('nostr-tools') as any; // Cast to any if necessary for type compatibility
   return {
-    ...actual,
+    ...actual, // Spread actual to keep non-mocked parts
     generatePrivateKey: vi.fn(() => 'mockPrivateKey'),
-    getPublicKey: vi.fn(sk => `mockPublicKey_for_${sk}`),
+    getPublicKey: vi.fn(sk => `mockPublicKey_for_${sk}`), // Use a function to avoid issues with undefined 'sk' if called unexpectedly
     nip04: {
       encrypt: vi.fn(async (privkey, pubkey, text) => `encrypted_${text}_by_${privkey}_for_${pubkey}`),
       decrypt: vi.fn(async (privkey, pubkey, payload) => payload.replace(`encrypted_`, '').replace(`_by_${privkey}_for_${pubkey}`, '')),
     },
+    // When SimplePool is constructed (e.g., in NostrService.ts), it will call this factory function,
+    // which returns the mockPool object. mockPool must be initialized by then.
     SimplePool: vi.fn(() => mockPool),
-    getEventHash: vi.fn((event) => `hash_${JSON.stringify(event.created_at)}`),
-    signEvent: vi.fn((event, sk) => `signed_${event.id}_by_${sk}`),
+    getEventHash: vi.fn((event) => `hash_${JSON.stringify(event.created_at)}`), // Example mock
+    signEvent: vi.fn((event, sk) => `signed_${event.id}_by_${sk}`), // Example mock
+    // Ensure all other functions from nostr-tools that NostrService.ts might use are either
+    // retained from `actual` or explicitly mocked. `generateSecretKey` and `bytesToHex` are used.
+    // `getPublicKey` from `nostr-tools/pure` is also used. The mock above handles `getPublicKey`.
+    // `generateSecretKey` and `bytesToHex` would be covered by `...actual` if they are top-level exports.
+    // If they are from submodules like `nostr-tools/pure`, they might need more specific mocking
+    // or ensure `actual.generateSecretKey` etc. are correct.
+    // For this specific error, SimplePool is the main concern.
   };
 });
 
+// Initialize the mock variables here. This code runs after vi.mock is hoisted and defined,
+// but before the describe block and actual test executions.
+// Crucially, this should run before NostrService.ts module evaluation triggers SimplePool instantiation.
+mockPublishResult = Promise.resolve();
+mockSubInstance = {
+  on: vi.fn(),
+  unsub: vi.fn(),
+};
+mockPool = {
+  publish: vi.fn().mockReturnValue([mockPublishResult]),
+  sub: vi.fn().mockReturnValue(mockSubInstance),
+  list: vi.fn().mockResolvedValue([]),
+  get: vi.fn().mockResolvedValue(null),
+  close: vi.fn(),
+};
 
 describe('NostrService', () => {
   let serviceInstance: NostrService;

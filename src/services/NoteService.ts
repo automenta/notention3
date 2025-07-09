@@ -199,7 +199,10 @@ export class NoteService {
 
   private static async generateAndSetEmbedding(note: Note): Promise<Note> {
     const { userProfile } = useAppStore.getState();
-    if (userProfile?.preferences.aiEnabled && aiService.isAIEnabled()) {
+    const storeAllowsAI = userProfile?.preferences.aiEnabled ?? false;
+    const serviceAllowsAI = aiService.isAIEnabled(); // Call it to check its status
+
+    if (storeAllowsAI && serviceAllowsAI) {
       // Combine title and content for a richer embedding
       const textToEmbed = `${note.title}\n${note.content}`;
       if (textToEmbed.trim()) {

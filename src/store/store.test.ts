@@ -1,16 +1,36 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useAppStore } from './index'; // Assuming default export from store/index.ts
 import { DBService } from '../services/db';
+import { FolderService } from '../services/FolderService'; // Import for mocking
 import { NoteService } from '../services/NoteService';
 import { NostrService, nostrService } from '../services/NostrService'; // Import instance too
 import { OntologyService } from '../services/ontology';
-import { Note, OntologyTree, UserProfile } from '../../shared/types';
+import { Note, OntologyTree, UserProfile, SyncQueueNoteOp } from '../../shared/types';
 
 // Mock services
 vi.mock('../services/db');
+vi.mock('../services/FolderService', () => ({
+  FolderService: {
+    createFolder: vi.fn(),
+    updateFolder: vi.fn(),
+    deleteFolder: vi.fn(),
+    getAllFolders: vi.fn().mockResolvedValue([]), // Default for initializeApp
+  }
+}));
 vi.mock('../services/NoteService');
 vi.mock('../services/NostrService');
 vi.mock('../services/ontology');
+// Mock DOMPurify globally for tests that might trigger it indirectly (e.g., sync)
+const mockSanitize = vi.fn(html => html); // Simple passthrough mock
+vi.mock('dompurify', () => ({
+  default: {
+    sanitize: mockSanitize,
+    addHook: vi.fn(), // if addHook is used
+    removeHook: vi.fn(), // if removeHook is used
+  }
+}));
+
 
 const initialNotes: Record<string, Note> = {};
 const initialOntology: OntologyTree = { nodes: {}, rootIds: [], updatedAt: new Date() };
@@ -228,33 +248,26 @@ describe('App Store', () => {
     const folderName = "My Test Folder";
     const parentId = undefined; // Or some existing folder ID
 
-    const mockNewFolder = {
+    const mockNewFolderResponse = { // This is the expected response for *this specific call*
       id: 'folder-123',
       name: folderName,
       parentId,
       noteIds: [],
-      children: [],
+      // children: [], // FolderService.createFolder might not return children immediately from service
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    vi.mock('../services/FolderService', () => ({ // Mock FolderService if not already done broadly
-        FolderService: {
-            createFolder: vi.fn().mockResolvedValue(mockNewFolder),
-            // Mock other FolderService methods if needed by other store actions
-            updateFolder: vi.fn(),
-            deleteFolder: vi.fn(),
-            getAllFolders: vi.fn().mockResolvedValue([]), // Used in initializeApp
-        }
-    }));
-    // Re-import or ensure FolderService mock is picked up if createFolder is called immediately
-    // For this test, direct mock before calling action is fine.
+
+    // Configure the mock for FolderService.createFolder for this specific test run
+    (FolderService.createFolder as vi.Mock).mockResolvedValue(mockNewFolderResponse);
 
     const newFolderId = await createFolder(folderName, parentId);
 
-    expect(newFolderId).toBe(mockNewFolder.id);
+    expect(newFolderId).toBe(mockNewFolderResponse.id);
     const state = useAppStore.getState();
-    expect(state.folders[mockNewFolder.id]).toBeDefined();
-    expect(state.folders[mockNewFolder.id].name).toBe(folderName);
+    expect(state.folders[mockNewFolderResponse.id]).toBeDefined();
+    expect(state.folders[mockNewFolderResponse.id].name).toBe(folderName);
+    // Check that the store action called the service method correctly
     expect(FolderService.createFolder).toHaveBeenCalledWith(folderName, parentId);
   });
 

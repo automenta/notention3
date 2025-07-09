@@ -1,13 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DBService } from './db';
-import { Note, Folder, OntologyTree, UserProfile, NotentionTemplate, SyncQueueItem } from '../../shared/types'; // Assuming SyncQueueItem is defined
-import localforage from 'localforage';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-// Mock localforage
-// This mock will be used by all instances created by localforage.createInstance()
+// Declare mockLocalforageInstance with var so it's hoisted (as undefined)
+// It will be assigned after vi.mock is processed but before other modules (like ./db) are fully initialized.
+var mockLocalforageInstance: any;
 const mockStore: Record<string, any> = {};
 
-const mockLocalforageInstance = {
+// Mock localforage
+// This vi.mock call is hoisted to the top.
+vi.mock('localforage', () => ({
+  default: {
+    // When createInstance is called (e.g. when ./db.ts is imported and its top-level code runs),
+    // it will return whatever mockLocalforageInstance is at that time.
+    createInstance: vi.fn(() => mockLocalforageInstance), // All instances share the same mock behavior and store
+    // Mock other static methods if DBService uses them directly (it doesn't seem to)
+  },
+}));
+
+// Assign mockLocalforageInstance here. This code runs after hoisting of vi.mock and var declarations.
+// By the time './db' is imported and its localforage.createInstance calls are made,
+// mockLocalforageInstance will have this object assigned.
+mockLocalforageInstance = {
   getItem: vi.fn(key => Promise.resolve(mockStore[key] !== undefined ? mockStore[key] : null)),
   setItem: vi.fn((key, value) => {
     mockStore[key] = value;
@@ -37,22 +49,25 @@ const mockLocalforageInstance = {
   // length: vi.fn(() => Promise.resolve(Object.keys(mockStore).length)), // If length is used
 };
 
-vi.mock('localforage', () => ({
-  default: {
-    createInstance: vi.fn(() => mockLocalforageInstance), // All instances share the same mock behavior and store
-    // Mock other static methods if DBService uses them directly (it doesn't seem to)
-  },
-}));
 
+// Import DBService AFTER mockLocalforageInstance is defined and vi.mock is set up.
+// Standard imports are hoisted, but the execution order of module bodies matters.
+// vi.mock ensures the mocking layer is in place before other modules are evaluated.
+import { DBService } from './db';
+import { Note, Folder, OntologyTree, UserProfile, NotentionTemplate, SyncQueueItem, DirectMessage, SyncQueueNoteOp } from '../../shared/types';
+// No need to import 'localforage' here if it's fully mocked and not used directly by the test file's logic.
 
 describe('DBService', () => {
   beforeEach(() => {
     // Clear the shared mock store and reset mock function calls before each test
-    mockLocalforageInstance.clear(); // This clears mockStore
+    // mockStore is cleared by mockLocalforageInstance.clear()
+    mockLocalforageInstance.clear();
     vi.clearAllMocks();
-    // Ensure createInstance has been called by DBService by the time tests run,
-    // or that the mock is effective for calls within DBService.
-    // DBService creates instances at the module level, so they should use the mock.
+    // Re-establish that createInstance should return our (now properly initialized) mockLocalforageInstance
+    // This is important if any test or DBService itself might re-import or re-mock localforage,
+    // though usually not necessary if the initial mock setup is correct.
+    // (localforage.default as any).createInstance.mockReturnValue(mockLocalforageInstance);
+    // Actually, since createInstance is already vi.fn(() => mockLocalforageInstance), this is implicitly handled.
   });
 
   const sampleNote: Note = {

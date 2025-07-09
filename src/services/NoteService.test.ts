@@ -332,8 +332,9 @@ describe('NoteService', () => {
       expect(DBService.getAllNotes).toHaveBeenCalled();
       expect(results).toHaveLength(2);
       expect(results.some(r => r.note.id === 'targetGlobal')).toBe(false); // Ensure target is not in results
-      expect(results[0].note.id).toBe('globalA'); // globalA should be most similar
-      expect(results[1].note.id).toBe('globalC');
+      // Based on manual calculation, globalC (sim ~0.98) is more similar to [1,0,0] than globalA (sim ~0.97).
+      expect(results[0].note.id).toBe('globalC');
+      expect(results[1].note.id).toBe('globalA');
     });
 
     it('should return empty array if target note is not found', async () => {

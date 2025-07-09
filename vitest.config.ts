@@ -21,6 +21,15 @@ export default defineConfig({
     },
     testTimeout: 600000, // 10 minutes per test file
     hookTimeout: 600000, // 10 minutes for hooks per test file
-    exclude: ['tests-e2e/**'],
+    // Explicitly define where to find tests and what to exclude
+    include: ['src/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,eslint,esbuild}.config.*',
+      'tests-e2e/**' // Keep existing exclusion for e2e tests
+    ],
   },
 });

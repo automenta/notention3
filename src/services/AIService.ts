@@ -21,19 +21,29 @@ export class AIService {
   private gemini: ChatGoogleGenerativeAI | null = null;
   private ollamaEmbeddings: OllamaEmbeddings | null = null;
   private geminiEmbeddings: GoogleGenerativeAIEmbeddings | null = null;
+  private modelsInitialized: boolean = false;
 
   private constructor() {
-    this.initializeModels();
+    // Do not initialize models here immediately
   }
 
   public static getInstance(): AIService {
     if (!AIService.instance) {
       AIService.instance = new AIService();
+      // Initialize models when instance is first created and store should be available
+      // However, explicit initialization after app setup is safer.
+      // For now, we'll add a dedicated public method for initialization.
     }
     return AIService.instance;
   }
 
-  private initializeModels() {
+  // Public method to initialize or re-initialize models
+  // This should be called after the app store is confirmed to be ready.
+  public initializeAiModels() {
+    if (this.modelsInitialized) {
+      console.log("AI models already initialized. Call reinitializeModels() to force re-initialization.");
+      return;
+    }
     const { userProfile } = useAppStore.getState(); // Access store state directly
 
     if (userProfile?.preferences.aiEnabled) {
@@ -87,6 +97,7 @@ export class AIService {
         }
       }
     }
+    this.modelsInitialized = true;
   }
 
   // Call this method if AI settings change
@@ -95,7 +106,8 @@ export class AIService {
     this.gemini = null;
     this.ollamaEmbeddings = null;
     this.geminiEmbeddings = null;
-    this.initializeModels();
+    this.modelsInitialized = false; // Reset flag
+    this.initializeAiModels(); // Call the public initializer
   }
 
   private getActiveChatModel(): Ollama | ChatGoogleGenerativeAI | null {
@@ -250,9 +262,11 @@ export class AIService {
 export const aiService = AIService.getInstance();
 
 // Listener for store changes to reinitialize AI models if settings change
-useAppStore.subscribe(
-  (state, prevState) => {
-    const currentPrefs = state.userProfile?.preferences;
+// This function should be called once the application (and store) is initialized.
+export function setupAiServiceStoreListener() {
+  useAppStore.subscribe(
+    (state, prevState) => {
+      const currentPrefs = state.userProfile?.preferences;
     const prevPrefs = prevState?.userProfile?.preferences; // Added optional chaining for prevState
 
     // If either prefs object is undefined (e.g. initial state or profile not loaded yet),

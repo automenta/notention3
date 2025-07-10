@@ -24,7 +24,7 @@ export default defineConfig({
     react(), 
     tailwindcss(), 
     injectBuiltByScoutPlugin(),
-    VitePWA({
+    VitePWA({ // Re-enabling this plugin
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {

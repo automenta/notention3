@@ -6,11 +6,23 @@ import { OllamaEmbeddings } from "@langchain/community/embeddings/ollama";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 // import { StringOutputParser } from '@langchain/core/output_parsers'; // StringOutputParser might not be directly used by AIService, but by chains
 
-// Mock the LangChain classes - Temporarily disable complex mocks
-// vi.mock("@langchain/community/llms/ollama");
-// vi.mock("@langchain/community/embeddings/ollama");
-// vi.mock("@langchain/google-genai");
-// vi.mock("@langchain/core/output_parsers");
+// Mock the LangChain classes
+const mockOllamaInstance = { pipe: vi.fn().mockReturnThis(), invoke: vi.fn() };
+const mockOllamaEmbeddingsInstance = { embedQuery: vi.fn() };
+const mockGeminiInstance = { pipe: vi.fn().mockReturnThis(), invoke: vi.fn() };
+const mockGeminiEmbeddingsInstance = { embedQuery: vi.fn() };
+
+vi.mock("@langchain/community/llms/ollama", () => ({
+  Ollama: vi.fn(() => mockOllamaInstance)
+}));
+vi.mock("@langchain/community/embeddings/ollama", () => ({
+  OllamaEmbeddings: vi.fn(() => mockOllamaEmbeddingsInstance)
+}));
+vi.mock("@langchain/google-genai", () => ({
+  ChatGoogleGenerativeAI: vi.fn(() => mockGeminiInstance),
+  GoogleGenerativeAIEmbeddings: vi.fn(() => mockGeminiEmbeddingsInstance)
+}));
+// vi.mock("@langchain/core/output_parsers"); // Only if StringOutputParser or others are directly constructed by AIService
 // let capturedPromptMessages: any[] = [];
 // vi.mock("@langchain/core/prompts", async () => {
 //     const actual = await vi.importActual("@langchain/core/prompts") as any;
@@ -43,21 +55,8 @@ vi.mock('../store', () => ({
   }
 }));
 
-const mockOllamaInstance = {
-  pipe: vi.fn().mockReturnThis(),
-  invoke: vi.fn(),
-};
-const mockOllamaEmbeddingsInstance = {
-  embedQuery: vi.fn(),
-};
-const mockGeminiInstance = {
-  pipe: vi.fn().mockReturnThis(),
-  invoke: vi.fn(),
-};
-const mockGeminiEmbeddingsInstance = {
-  embedQuery: vi.fn(),
-};
-
+// Removed duplicate declarations of mockOllamaInstance, etc.
+// The ones at the top of the file (lines 8-11) are used by the vi.mock factories.
 
 describe('AIService', () => {
   const defaultUserProfilePreferences = {
@@ -82,24 +81,18 @@ describe('AIService', () => {
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    // Reset LangChain constructor mocks
-    (Ollama as vi.Mock).mockImplementation(() => mockOllamaInstance);
-    (OllamaEmbeddings as vi.Mock).mockImplementation(() => mockOllamaEmbeddingsInstance);
-    (ChatGoogleGenerativeAI as vi.Mock).mockImplementation(() => mockGeminiInstance);
-    (GoogleGenerativeAIEmbeddings as vi.Mock).mockImplementation(() => mockGeminiEmbeddingsInstance);
-  // StringOutputParser as vi.Mock).mockImplementation(() => ({
-  //       // mock StringOutputParser if its methods are used by the chain
-  //   }));
+    vi.clearAllMocks(); // This should clear call history for vi.fn() returned by vi.mock factories too.
 
+    // Reset calls and return values for methods on the mock instances
+    mockOllamaInstance.invoke.mockClear();
+    mockOllamaInstance.pipe.mockClear().mockReturnThis(); // Ensure pipe is chainable
+    mockOllamaEmbeddingsInstance.embedQuery.mockClear();
 
-    // Reset instance method mocks
-    // mockOllamaInstance.invoke.mockReset();
-    // mockOllamaInstance.pipe.mockReturnThis(); // Ensure pipe is chainable
-    // mockOllamaEmbeddingsInstance.embedQuery.mockReset();
-    // mockGeminiInstance.invoke.mockReset();
-    // mockGeminiInstance.pipe.mockReturnThis(); // Ensure pipe is chainable
-    // mockGeminiEmbeddingsInstance.embedQuery.mockReset();
+    mockGeminiInstance.invoke.mockClear();
+    mockGeminiInstance.pipe.mockClear().mockReturnThis(); // Ensure pipe is chainable
+    mockGeminiEmbeddingsInstance.embedQuery.mockClear();
+
+    // The (Ollama as vi.Mock).mockImplementation(...) lines are removed as vi.mock handles this.
 
     // Set a default non-AI enabled state
     setMockStoreUserProfile({ aiEnabled: false });

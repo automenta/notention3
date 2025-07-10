@@ -77,10 +77,15 @@ describe('App Store', () => {
     (DBService.getUserProfile as vi.Mock).mockResolvedValue(initialUserProfile);
     (DBService.getAllFolders as vi.Mock).mockResolvedValue([]);
     (DBService.getAllTemplates as vi.Mock).mockResolvedValue([]);
+    (DBService.getDefaultTemplates as vi.Mock).mockResolvedValue([]); // Ensure it returns an array
     (DBService.getDefaultOntology as vi.Mock).mockResolvedValue(initialOntology);
     (DBService.saveNote as vi.Mock).mockResolvedValue(undefined);
     (DBService.addNoteToSyncQueue as vi.Mock).mockResolvedValue(undefined);
 
+    // For initializeApp test
+    (NoteService.getNotes as vi.Mock).mockImplementation(async () => {
+      return await DBService.getAllNotes(); // Simulate it calls DBService
+    });
 
     (NoteService.createNote as vi.Mock).mockImplementation(async (partialNote) => {
       const id = `note-${Date.now()}`;
@@ -218,7 +223,11 @@ describe('App Store', () => {
   });
 
   it('updateUserProfile should update userProfile state and call DBService', async () => {
-    const { updateUserProfile } = useAppStore.getState();
+    const storeActions = useAppStore.getState();
+    console.log('Store actions keys:', Object.keys(storeActions)); // DEBUG LINE
+    expect(storeActions.updateUserProfile).toBeDefined();
+    expect(typeof storeActions.updateUserProfile).toBe('function');
+
     const profileUpdates: Partial<UserProfile> = {
       preferences: {
         ...initialUserProfile.preferences,

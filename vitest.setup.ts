@@ -1,5 +1,15 @@
 // vitest.setup.ts
 import '@testing-library/jest-dom';
+import DOMPurify from 'dompurify';
+
+// Make DOMPurify available globally in the JSDOM environment
+if (typeof window !== 'undefined') {
+  (window as any).DOMPurify = DOMPurify;
+} else if (typeof global !== 'undefined') {
+  // Fallback for environments where window might not be the primary global (less common for jsdom)
+  (global as any).DOMPurify = DOMPurify;
+}
+
 
 // You can add other global setup here if needed, for example:
 // - Mocking global objects (localStorage, fetch)

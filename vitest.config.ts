@@ -8,17 +8,17 @@ export default defineConfig({
   test: {
     globals: true, // Makes describe, it, expect, etc. globally available
     environment: 'jsdom', // Use JSDOM for tests that need a browser-like environment
-    setupFiles: './vitest.setup.ts', // Optional: For global test setup (e.g., jest-dom matchers)
-    // coverage: {
-    //   provider: 'v8', // or 'istanbul'
-    //   reporter: ['text', 'json', 'html'],
-    //   reportsDirectory: './coverage',
+    // setupFiles: './vitest.setup.ts', // Optional: For global test setup (e.g., jest-dom matchers)
+    // // coverage: {
+    // //   provider: 'v8', // or 'istanbul'
+    // //   reporter: ['text', 'json', 'html'],
+    // //   reportsDirectory: './coverage',
+    // // },
+    // resolve: {
+    //   alias: {
+    //     '@': path.resolve(__dirname, './src'),
+    //   },
     // },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-      },
-    },
     testTimeout: 600000, // 10 minutes per test file
     hookTimeout: 600000, // 10 minutes for hooks per test file
     // Explicitly define where to find tests and what to exclude

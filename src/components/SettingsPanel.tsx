@@ -8,20 +8,31 @@ import { Switch } from "./ui/switch";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { useAppStore } from "../store";
+import { shallow } from 'zustand/shallow'; // Add this import
 import { DBService } from "../services/db";
 import { UserProfile as UserProfileComponent } from "./UserProfile"; // Import the new component
 
 export function SettingsPanel() {
   const {
     userProfile,
-    // updateUserProfile, // This will be handled by UserProfileComponent internally for its scope
     generateAndStoreNostrKeys,
     logoutFromNostr,
     nostrRelays,
     addNostrRelay,
     removeNostrRelay,
-    updateUserProfile: storeUpdateUserProfile // Keep for other settings like theme, AI
-  } = useAppStore();
+    updateUserProfile: storeUpdateUserProfile
+  } = useAppStore(
+    (state) => ({
+      userProfile: state.userProfile,
+      generateAndStoreNostrKeys: state.generateAndStoreNostrKeys,
+      logoutFromNostr: state.logoutFromNostr,
+      nostrRelays: state.nostrRelays,
+      addNostrRelay: state.addNostrRelay,
+      removeNostrRelay: state.removeNostrRelay,
+      updateUserProfile: state.updateUserProfile,
+    }),
+    shallow
+  );
 
   // State for relay management is kept here
   const [newRelayUrl, setNewRelayUrl] = useState("");

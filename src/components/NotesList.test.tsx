@@ -112,7 +112,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 
-describe.skip('NotesList', () => {
+describe('NotesList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers(); // For debouncing search

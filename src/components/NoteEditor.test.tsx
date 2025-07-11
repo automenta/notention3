@@ -153,7 +153,7 @@ const setupStore = (currentNoteOverrides: Partial<Note> = {}) => {
 };
 
 
-describe.skip('NoteEditor', () => {
+describe('NoteEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupStore();

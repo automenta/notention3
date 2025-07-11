@@ -39,7 +39,7 @@ vi.mock('nostr-tools', async () => {
 });
 
 
-describe.skip('NostrService', () => {
+describe('NostrService', () => {
   let serviceInstance: NostrService;
 
   beforeEach(() => {

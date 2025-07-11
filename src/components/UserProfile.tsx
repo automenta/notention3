@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store';
+import { shallow } from 'zustand/shallow';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
@@ -13,7 +14,7 @@ export function UserProfile() {
   const { userProfile, updateUserProfile: storeUpdateUserProfile } = useAppStore(state => ({
     userProfile: state.userProfile,
     updateUserProfile: state.updateUserProfile,
-  }));
+  }), shallow);
 
   const [sharedTags, setSharedTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');

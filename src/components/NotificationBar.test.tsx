@@ -18,7 +18,7 @@ vi.mock('../store', () => ({
   })),
 }));
 
-describe.skip('NotificationBar', () => {
+describe('NotificationBar', () => {
   beforeEach(() => {
     mockDirectMessages = [];
     mockMatches = [];

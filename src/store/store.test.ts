@@ -43,7 +43,7 @@ const initialUserProfile: UserProfile = {
   privacySettings: { sharePublicNotesGlobally: false, shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }
 };
 
-describe.skip('App Store', () => {
+describe('App Store', () => {
   beforeEach(() => {
     // Reset store to initial state before each test
     useAppStore.setState({

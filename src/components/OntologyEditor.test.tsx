@@ -114,7 +114,7 @@ const WrappedOntologyEditor = () => (
 );
 
 
-describe.skip('OntologyEditor', () => {
+describe('OntologyEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupStore();

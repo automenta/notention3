@@ -51,7 +51,7 @@ vi.mock('localforage', () => {
 });
 
 
-describe.skip('DBService', () => {
+describe('DBService', () => {
   beforeEach(() => {
     // Reset the state of the shared mock for each test
     localforage._resetMockStore(); // Clear the internal store

@@ -228,7 +228,7 @@ describe('AIService', () => {
     });
   });
 
-  describe.skip('getEmbeddingVector', () => {
+  describe('getEmbeddingVector', () => {
     it('should return empty array if AI is disabled', async () => {
       setMockStoreUserProfile({ aiEnabled: false });
       const vector = await aiService.getEmbeddingVector("test text");
@@ -284,7 +284,7 @@ describe('AIService', () => {
     });
   });
 
-  describe.skip('Reinitialization on Store Change', () => {
+  describe('Reinitialization on Store Change', () => {
     beforeEach(() => {
       // Ensure the store listener is set up before each test in this block
       setupAiServiceStoreListener();

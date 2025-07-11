@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import { ContactsPanel } from './ContactsPanel';
 import { useAppStore } from '../store';
 import { UserProfile, Contact } from '../../shared/types';
+import { toast } from 'sonner';
 
 // Mock toast
 vi.mock('sonner', () => ({
@@ -67,7 +68,7 @@ const setupMockStore = (profile?: UserProfile) => {
 };
 
 
-describe.skip('ContactsPanel', () => {
+describe('ContactsPanel', () => {
   beforeEach(() => {
     // Default to user with no contacts for most tests unless specified
     setupMockStore(mockUserWithoutContacts);
@@ -117,7 +118,7 @@ describe.skip('ContactsPanel', () => {
         alias: 'Charlie',
       });
     });
-    expect(vi.mocked(global.sonner.toast.success).mock.calls[0][0]).toContain('Contact Charlie added!');
+    expect(vi.mocked(toast.success).mock.calls[0][0]).toContain('Contact Charlie added!');
   });
 
   it('validates nostr public key format on add', async () => {
@@ -131,7 +132,7 @@ describe.skip('ContactsPanel', () => {
     fireEvent.click(addButtonInModal);
 
     await waitFor(() => {
-        expect(vi.mocked(global.sonner.toast.error).mock.calls[0][0]).toContain('Invalid Nostr public key format.');
+        expect(vi.mocked(toast.error).mock.calls[0][0]).toContain('Invalid Nostr public key format.');
     });
     expect(mockAddContact).not.toHaveBeenCalled();
   });
@@ -163,7 +164,7 @@ describe.skip('ContactsPanel', () => {
     await waitFor(() => {
       expect(mockUpdateContactAlias).toHaveBeenCalledWith('contact1-pubkey', 'Alice Smith');
     });
-    expect(vi.mocked(global.sonner.toast.success).mock.calls[0][0]).toContain('Alias updated.');
+    expect(vi.mocked(toast.success).mock.calls[0][0]).toContain('Alias updated.');
   });
 
   it('allows removing a contact', async () => {
@@ -184,7 +185,7 @@ describe.skip('ContactsPanel', () => {
       expect(mockRemoveContact).toHaveBeenCalledWith('contact2-pubkey');
     });
     expect(window.confirm).toHaveBeenCalled();
-    expect(vi.mocked(global.sonner.toast.success).mock.calls[0][0]).toContain('Contact removed.');
+    expect(vi.mocked(toast.success).mock.calls[0][0]).toContain('Contact removed.');
   });
 
   it('opens DM modal when DM button is clicked for a contact', () => {

@@ -12,6 +12,27 @@ vi.mock('../services/NoteService');
 vi.mock('../services/NostrService');
 vi.mock('../services/ontology');
 
+vi.mock('../services/FolderService', () => { // Mock FolderService if not already done broadly
+  const mockNewFolderInsideFactory = {
+    id: 'folder-123',
+    name: "My Test Folder",
+    parentId: undefined,
+    noteIds: [],
+    children: [],
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  return {
+    FolderService: {
+        createFolder: vi.fn().mockResolvedValue(mockNewFolderInsideFactory),
+        // Mock other FolderService methods if needed by other store actions
+        updateFolder: vi.fn(),
+        deleteFolder: vi.fn(),
+        getAllFolders: vi.fn().mockResolvedValue([]), // Used in initializeApp
+    }
+  };
+});
+
 const initialNotes: Record<string, Note> = {};
 const initialOntology: OntologyTree = { nodes: {}, rootIds: [], updatedAt: new Date() };
 const initialUserProfile: UserProfile = {
@@ -21,27 +42,6 @@ const initialUserProfile: UserProfile = {
   nostrRelays: ['wss://relay.example.com'],
   privacySettings: { sharePublicNotesGlobally: false, shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }
 };
-
-// Define mockNewFolder BEFORE the vi.mock call that uses it
-const mockNewFolder = {
-  id: 'folder-123',
-  name: "My Test Folder",
-  parentId: undefined,
-  noteIds: [],
-  children: [],
-  createdAt: new Date(),
-  updatedAt: new Date()
-};
-
-vi.mock('../services/FolderService', () => ({ // Mock FolderService if not already done broadly
-    FolderService: {
-        createFolder: vi.fn().mockResolvedValue(mockNewFolder),
-        // Mock other FolderService methods if needed by other store actions
-        updateFolder: vi.fn(),
-        deleteFolder: vi.fn(),
-        getAllFolders: vi.fn().mockResolvedValue([]), // Used in initializeApp
-    }
-}));
 
 describe.skip('App Store', () => {
   beforeEach(() => {
@@ -251,13 +251,14 @@ describe.skip('App Store', () => {
 
     // Re-import or ensure FolderService mock is picked up if createFolder is called immediately
     // For this test, direct mock before calling action is fine.
+    const expectedFolderId = 'folder-123'; // ID from mockNewFolderInsideFactory
 
     const newFolderId = await createFolder(folderName, parentId);
 
-    expect(newFolderId).toBe(mockNewFolder.id);
+    expect(newFolderId).toBe(expectedFolderId);
     const state = useAppStore.getState();
-    expect(state.folders[mockNewFolder.id]).toBeDefined();
-    expect(state.folders[mockNewFolder.id].name).toBe(folderName);
+    expect(state.folders[expectedFolderId]).toBeDefined();
+    expect(state.folders[expectedFolderId].name).toBe(folderName);
     expect(FolderService.createFolder).toHaveBeenCalledWith(folderName, parentId);
   });
 

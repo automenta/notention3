@@ -7,25 +7,12 @@ import { NotificationBar } from "./components/NotificationBar";
 import { AccountWizard } from "./components/AccountWizard"; // Import the wizard
 
 export default function App() {
-  const { initializeApp, loading, userProfile, nostrConnected } = useAppStore(
-    (state) => ({
-      initializeApp: state.initializeApp,
-      loading: state.loading,
-      userProfile: state.userProfile,
-      nostrConnected: state.nostrConnected, // Or use userProfile.nostrPubkey directly
-    })
-  );
+  const initializeApp = useAppStore((state) => state.initializeApp);
+  const loading = useAppStore((state) => state.loading);
+  const userProfile = useAppStore((state) => state.userProfile);
+  const nostrConnected = useAppStore((state) => state.nostrConnected);
 
   const [showWizard, setShowWizard] = useState(false);
-
-  useEffect(() => {
-    const init = async () => {
-      await initializeApp();
-      // After initialization, check if we need to show the wizard.
-      // This check will be re-evaluated if userProfile changes.
-    };
-    init();
-  }, [initializeApp]);
 
   useEffect(() => {
     // This effect runs after initializeApp has populated userProfile and nostrConnected status

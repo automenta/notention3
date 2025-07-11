@@ -33,6 +33,7 @@ import { OntologyService } from "../services/ontology";
 import { aiService } from "../services/AIService"; // Import AI Service
 import { toast } from "sonner"; // For notifications
 import { LoadingSpinner } from "./ui/loading-spinner"; // For loading state
+import { OntologySortableNode } from './OntologySortableNode';
 
 export function OntologyEditor() {
   const { ontology, updateOntology, setOntology: setStoreOntology, userProfile } = useAppStore();
@@ -195,90 +196,7 @@ export function OntologyEditor() {
     }
   };
 
-  // Recursive function to render nodes
-  const renderNode = (node: OntologyNode, level: number = 0): JSX.Element => {
-    const {
-      attributes: dndAttributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: node.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-      paddingLeft: `${level * 20 + 8}px`, // Indentation based on level
-    };
-
-    const children = getChildNodes(node.id);
-    const hasChildren = children.length > 0;
-    const isExpanded = expandedNodes.has(node.id);
-
-    return (
-      <div ref={setNodeRef} style={style} className="mb-1 bg-card group" {...dndAttributes}>
-        <div 
-          className={`flex items-center gap-1 p-2 rounded hover:bg-accent ${isDragging ? 'shadow-lg' : ''}`}
-        >
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 cursor-grab group-hover:opacity-100 opacity-25" {...listeners}>
-            <GripVertical size={14} />
-          </Button>
-          {hasChildren ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id); }}
-            >
-              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </Button>
-          ) : (
-            <div className="w-6" /> // Placeholder for alignment
-          )}
-
-          <Badge variant="outline" className="text-xs cursor-default truncate max-w-xs">
-            {node.label}
-          </Badge>
-          {node.attributes && Object.keys(node.attributes).length > 0 && (
-            <Badge variant="secondary" className="text-xs ml-1 cursor-default truncate max-w-xs hidden sm:inline-block">
-              {Object.entries(node.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}
-            </Badge>
-          )}
-
-          <div className="flex items-center gap-1 ml-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(node);}}
-            >
-              <Edit2 size={12} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-destructive"
-              onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id);}}
-            >
-              <Trash2 size={12} />
-            </Button>
-          </div>
-        </div>
-
-        {hasChildren && isExpanded && (
-          <div className="pl-0"> {/* No extra padding here, parent div controls it */}
-            {/* For SortableContext with children, ensure items are direct descendants or manage IDs carefully */}
-            {/* This basic SortableContext might need adjustment for nested D&D if children are also sortable independently */}
-            <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
-              {children.map(child => renderNode(child, level + 1))}
-            </SortableContext>
-          </div>
-        )}
-      </div>
-    );
-  };
+  
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -327,9 +245,9 @@ export function OntologyEditor() {
     // For now, let's assume basic reordering first, then consider re-parenting.
 
     // Attempt to find the parent of the 'over' node to determine if it's a sibling reorder
-    let targetParentId = overNode?.parentId;
-    let targetList = targetParentId ? ontology.nodes[targetParentId]?.children || [] : ontology.rootIds;
-    let newIndex = targetList.indexOf(overNodeId);
+    const targetParentId = overNode?.parentId;
+    const targetList = targetParentId ? ontology.nodes[targetParentId]?.children || [] : ontology.rootIds;
+    const newIndex = targetList.indexOf(overNodeId);
 
     if (oldParentId === targetParentId) { // Reordering within the same list (siblings or root items)
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -447,6 +365,33 @@ export function OntologyEditor() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
+        <SortableContext items={ontology.rootIds} strategy={verticalListSortingStrategy}>
+          {ontology.rootIds.map(rootId => (
+            <OntologySortableNode
+              key={rootId}
+              node={ontology.nodes[rootId]}
+              level={0}
+              toggleExpanded={toggleExpanded}
+              handleOpenEditDialog={handleOpenEditDialog}
+              handleDeleteNode={handleDeleteNode}
+              ontology={ontology}
+              expandedNodes={expandedNodes}
+            />
+          ))}
+        </SortableContext>
+        <DragOverlay>
+          {activeId && activeNode ? (
+            <OntologySortableNode
+              node={activeNode}
+              level={0} // Level doesn't matter for drag overlay, but needs a value
+              toggleExpanded={toggleExpanded}
+              handleOpenEditDialog={handleOpenEditDialog}
+              handleDeleteNode={handleDeleteNode}
+              ontology={ontology}
+              expandedNodes={expandedNodes}
+            />
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </ScrollArea>
   );

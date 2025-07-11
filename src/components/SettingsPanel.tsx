@@ -1,6 +1,8 @@
-import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck, Import } from "lucide-react"; // Added Import icon
+import { Settings, User, Key, Palette, Zap, Download, Upload, Trash2, Plus, LogOut, Server, ShieldCheck, Import, Terminal, Copy as CopyIcon, Check as CheckIcon } from "lucide-react"; // Added Import, Terminal, Copy, Check icons
 import React, { useState } from "react";
 import { Button } from "./ui/button";
+import { toast } from "sonner"; // Import toast
+import { Checkbox } from "./ui/checkbox"; // Added Checkbox
 import { Input } from "./ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "./ui/dialog"; // For import modal
 import { Label } from "./ui/label";
@@ -35,31 +37,45 @@ export function SettingsPanel() {
   const [newPkForBackupDisplay, setNewPkForBackupDisplay] = useState<string | null>(null);
   const [newSkBackupConfirmed, setNewSkBackupConfirmed] = useState(false);
   const [copiedNewSk, setCopiedNewSk] = useState(false);
+    const [isDataManagementBusy, setIsDataManagementBusy] = useState(false);
 
 
   const handleExportData = async () => {
-    const data = await DBService.exportData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `notention-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setIsDataManagementBusy(true);
+    try {
+      const data = await DBService.exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `notention-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Data exported successfully!");
+    } catch (error) {
+      toast.error("Failed to export data.", { description: String(error) });
+    } finally {
+      setIsDataManagementBusy(false);
+    }
   };
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    setIsDataManagementBusy(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
         await DBService.importData(data);
-        alert('Data imported successfully! Please refresh the page.');
+        toast.success('Data imported successfully!', { description: "Please refresh the page to see changes."});
       } catch (error) {
-        alert('Failed to import data. Please check the file format.');
+        toast.error('Failed to import data.', { description: "Please check the file format and console for errors." });
+        console.error("Import data error:", error);
+      } finally {
+        setIsDataManagementBusy(false);
+        // Reset file input so the same file can be selected again if needed
+        if (event.target) event.target.value = "";
       }
     };
     reader.readAsText(file);
@@ -67,8 +83,15 @@ export function SettingsPanel() {
 
   const handleClearData = async () => {
     if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
-      await DBService.clearAllData();
-      alert('All data cleared! Please refresh the page.');
+      setIsDataManagementBusy(true);
+      try {
+        await DBService.clearAllData();
+        toast.success('All data cleared!', { description: "Please refresh the page." });
+      } catch (error) {
+        toast.error("Failed to clear data.", { description: String(error) });
+      } finally {
+        setIsDataManagementBusy(false);
+      }
     }
   };
 
@@ -87,9 +110,9 @@ export function SettingsPanel() {
       } else if (publicKey) {
         // This case should ideally not happen if generateAndStoreNostrKeys always returns sk when new keys are made.
         // It implies keys were somehow stored but sk wasn't returned (e.g. error or existing key logic if that were part of this path)
-        toast.success(`Nostr keys updated/verified. Public Key: ${publicKey.substring(0,10)}...`);
+        // toast.success(`Nostr keys updated/verified. Public Key: ${publicKey.substring(0,10)}...`); // Covered by backup modal success
       } else {
-        toast.error('Failed to generate and store new keypair.', { description: userProfile?.preferences.aiEnabled ? errors.network : "Check console for errors." });
+        toast.error('Failed to generate and store new keypair.', { description: errors.network || "Please check console for errors." });
       }
     }
   };
@@ -328,10 +351,10 @@ export function SettingsPanel() {
                 checked={userProfile?.privacySettings?.sharePublicNotesGlobally || false}
                 onCheckedChange={(checked) => {
                   if (userProfile) {
-                    updateUserProfile({
+                    storeUpdateUserProfile({
                       ...userProfile,
                       privacySettings: {
-                        ...(userProfile.privacySettings || { shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true }), // keep other settings if they exist
+                        ...(userProfile.privacySettings || { shareTagsWithPublicNotes: true, shareValuesWithPublicNotes: true, shareEmbeddingsWithPublicNotes: false }),
                         sharePublicNotesGlobally: checked,
                       },
                     });
@@ -378,7 +401,7 @@ export function SettingsPanel() {
                 disabled={!userProfile?.privacySettings?.sharePublicNotesGlobally} // Disable if global public sharing is off
                 onCheckedChange={(checked) => {
                   if (userProfile && userProfile.privacySettings) {
-                    updateUserProfile({
+                    storeUpdateUserProfile({
                       ...userProfile,
                       privacySettings: {
                         ...userProfile.privacySettings,
@@ -628,9 +651,10 @@ export function SettingsPanel() {
               size="sm" 
               className="w-full justify-start"
               onClick={handleExportData}
+              disabled={isDataManagementBusy}
             >
               <Download size={16} className="mr-2" />
-              Export Data
+              {isDataManagementBusy ? "Exporting..." : "Export Data"}
             </Button>
             
             <div>
@@ -640,15 +664,17 @@ export function SettingsPanel() {
                 onChange={handleImportData}
                 className="hidden"
                 id="import-file"
+                disabled={isDataManagementBusy}
               />
               <Button 
                 variant="outline" 
                 size="sm" 
                 className="w-full justify-start"
                 onClick={() => document.getElementById('import-file')?.click()}
+                disabled={isDataManagementBusy}
               >
                 <Upload size={16} className="mr-2" />
-                Import Data
+                {isDataManagementBusy ? "Importing..." : "Import Data"}
               </Button>
             </div>
             
@@ -657,9 +683,10 @@ export function SettingsPanel() {
               size="sm" 
               className="w-full justify-start"
               onClick={handleClearData}
+              disabled={isDataManagementBusy}
             >
               <Trash2 size={16} className="mr-2" />
-              Clear All Data
+              {isDataManagementBusy ? "Clearing..." : "Clear All Data"}
             </Button>
           </CardContent>
         </Card>
@@ -741,7 +768,7 @@ export function SettingsPanel() {
                   <div className="flex items-center gap-2 mt-1">
                     <Input id="newlyGeneratedSkDisplay" value={newSkForBackup} readOnly className="font-mono text-xs"/>
                     <Button variant="outline" size="icon" onClick={copyNewSkToClipboard} title="Copy Private Key">
-                      {copiedNewSk ? <Check size={16} /> : <Copy size={16} />}
+                      {copiedNewSk ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
                     </Button>
                   </div>
                 </div>

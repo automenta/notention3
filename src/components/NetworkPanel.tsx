@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ScrollArea } from "./ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input"; // Added Input
+import { Textarea } from "./ui/textarea"; // Import Textarea
 import { useAppStore } from "../store";
 import { useEffect, useState } from "react"; // Added useState
 import { toast } from "sonner";
@@ -22,7 +23,7 @@ export function NetworkPanel() {
     nostrRelays,
     userProfile,
     errors,
-    loading,
+    loading, // This includes loading.sync
     generateAndStoreNostrKeys,
     logoutFromNostr,
     publishCurrentNoteToNostr,
@@ -738,8 +739,7 @@ export function NetworkPanel() {
                 <DialogDescription>To: {dmRecipient.substring(0,10)}...</DialogDescription>
               </DialogHeader>
               <div className="py-4">
-                <Input
-                  type="textarea"
+                <Textarea
                   value={dmContent}
                   onChange={(e) => setDmContent(e.target.value)}
                   placeholder="Your encrypted message..."

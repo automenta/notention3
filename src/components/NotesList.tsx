@@ -297,7 +297,7 @@ export function NotesList({ viewMode }: NotesListProps) {
         </div>
         {isExpanded && folderNode.childrenNodes && folderNode.childrenNodes.length > 0 && (
           <div className="pl-3 border-l border-dashed border-muted-foreground/20 ml-[11px]">
-            {folderNode.childrenNodes.map(child => renderFolderNode(child, 0))}
+            {folderNode.childrenNodes.map(child => renderFolderNode(child, level + 1))}
           </div>
         )}
       </div>
@@ -342,7 +342,7 @@ export function NotesList({ viewMode }: NotesListProps) {
         </div>
         {isExpanded && children.length > 0 && (
           <div className="pl-2 border-l border-dashed border-muted-foreground/30 ml-[9px]"> {/* Indent children further, add guide line */}
-            {children.map(child => renderOntologyFilterNode(child, 0))} {/* level reset for children as padding is on parent */}
+            {children.map(child => renderOntologyFilterNode(child, level + 1))} {/* level reset for children as padding is on parent */}
           </div>
         )}
       </div>

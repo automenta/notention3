@@ -36,7 +36,7 @@ import { LoadingSpinner } from "./ui/loading-spinner"; // For loading state
 import { OntologySortableNode } from './OntologySortableNode';
 
 export function OntologyEditor() {
-  const { ontology, updateOntology, setOntology: setStoreOntology, userProfile } = useAppStore();
+  const { ontology, setOntology: setStoreOntology, userProfile } = useAppStore(); // Removed updateOntology
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
   // AI Suggestions State
@@ -100,8 +100,7 @@ export function OntologyEditor() {
     const newOntologyState = OntologyService.addNode(ontology, newNode);
 
     try {
-      await updateOntology(newOntologyState); // Attempt to save to DB via store action
-      setStoreOntology(newOntologyState); // Update Zustand store state upon successful save
+      await setStoreOntology(newOntologyState); // Update Zustand store state upon successful save
 
       setNewNodeLabel("");
       setNewNodeParentId(undefined);
@@ -120,8 +119,7 @@ export function OntologyEditor() {
 
   const handleDeleteNode = async (nodeId: string) => {
     const newOntology = OntologyService.removeNode(ontology, nodeId);
-    await updateOntology(newOntology);
-    setStoreOntology(newOntology);
+    await setStoreOntology(newOntology);
   };
 
   const handleUpdateNode = async () => {
@@ -133,8 +131,7 @@ export function OntologyEditor() {
     };
 
     const newOntology = OntologyService.updateNode(ontology, editingNode.id, updates);
-    await updateOntology(newOntology);
-    setStoreOntology(newOntology);
+    await setStoreOntology(newOntology);
     handleCloseEditDialog();
   };
 
@@ -186,8 +183,7 @@ export function OntologyEditor() {
     try {
       const newNode = OntologyService.createNode(suggestedNode.label, suggestedNode.parentId, suggestedNode.attributes);
       const newOntology = OntologyService.addNode(ontology, newNode);
-      await updateOntology(newOntology);
-      setStoreOntology(newOntology);
+      await setStoreOntology(newOntology);
       toast.success(`Added suggested concept: ${suggestedNode.label}`);
       // Remove the added suggestion from the list
       setAISuggestions(prev => prev.filter(s => s.label !== suggestedNode.label));
@@ -291,11 +287,10 @@ export function OntologyEditor() {
     }
 
     if (newOntology !== ontology) {
-      updateOntology(newOntology); // Persist via store action (which should call DB)
-      setStoreOntology(newOntology); // Update Zustand state
+      await setStoreOntology(newOntology); // Persist and Update Zustand state
       toast.success(`Ontology item '${activeNode.label}' moved.`);
     }
-  }, [ontology, updateOntology, setStoreOntology]);
+  }, [ontology, setStoreOntology]);
 
   const handleExportOntology = () => {
     if (!ontology || Object.keys(ontology.nodes).length === 0) {
@@ -342,8 +337,7 @@ export function OntologyEditor() {
           }
         }
 
-        await updateOntology(importedOntology); // This should save to DB via store action
-        setStoreOntology(importedOntology); // Update store state
+        await setStoreOntology(importedOntology); // Update store state & save to DB
         toast.success("Ontology imported successfully!");
       } catch (error) {
         toast.error("Failed to import ontology.", { description: String(error) });

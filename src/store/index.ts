@@ -109,7 +109,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   templates: {},
   
   currentNoteId: undefined,
-  sidebarTab: 'notes' as "notes" | "ontology" | "network" | "settings" | "contacts", // Changed 'chats' to 'contacts'
+  sidebarTab: 'notes' as "notes" | "ontology" | "network" | "settings" | "contacts" | "chats", // Added 'chats' back
   searchQuery: '',
   searchFilters: {},
   

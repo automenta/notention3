@@ -146,7 +146,14 @@ export function NoteEditor() {
             if (triggerChar === '#') {
               filteredNodes = allOntologyNodes
                 .filter(node => node.label.startsWith('#') && node.label.toLowerCase().includes(query.toLowerCase()))
-                .map(node => ({ id: node.id, label: node.label, trigger: '#' })) // Pass trigger for command/render
+                .map(node => ({ id: node.id, label: node.label, trigger: '#' }))
+                .slice(0, 10);
+            } else if (triggerChar === '@') {
+              // Suggest @persons from ontology nodes that start with @
+              // Or, this could be adapted to suggest from a contacts list if available and desired
+              filteredNodes = allOntologyNodes
+                .filter(node => node.label.startsWith('@') && node.label.toLowerCase().includes(query.toLowerCase()))
+                .map(node => ({ id: node.id, label: node.label, trigger: '@' }))
                 .slice(0, 10);
             }
             // To re-enable '@' suggestions through this single instance (if char='#' is too restrictive):
@@ -242,9 +249,37 @@ export function NoteEditor() {
     content: editorContent,
     editable: isEditing,
     onUpdate: ({ editor }) => {
-      setEditorContent(editor.getHTML());
+      const html = editor.getHTML();
+      setEditorContent(html);
+      if (currentNoteId && isEditing) {
+        debouncedSaveContentRef.current(currentNoteId, html);
+      }
+    },
+    onBlur: ({ editor }) => {
+      if (currentNoteId && notes[currentNoteId] && isEditing) {
+        const currentEditorHTML = editor.getHTML();
+        if (currentEditorHTML !== notes[currentNoteId].content) {
+          // console.log("Auto-saving content on blur...", currentNoteId);
+          updateNote(currentNoteId, { content: currentEditorHTML });
+        }
+      }
     },
   });
+
+  // Debounced save for content
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debouncedSaveContentRef = useRef((noteId: string, contentToSave: string) => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    debounceTimeoutRef.current = setTimeout(() => {
+      if (notes[noteId]?.content !== contentToSave) { // Check against persisted content
+        // console.log("Debounced auto-saving content...", noteId);
+        updateNote(noteId, { content: contentToSave });
+      }
+    }, 2000); // 2-second debounce
+  });
+
 
   useEffect(() => {
     if (editor && currentNote && editor.getHTML() !== currentNote.content) {
@@ -476,6 +511,25 @@ export function NoteEditor() {
           <Input
             value={currentNote.title}
             onChange={(e) => handleTitleChange(e.target.value)}
+            onBlur={() => {
+              if (isEditing && currentNoteId && currentNote && notes[currentNoteId]) {
+                // Title is already updated in currentNote via handleTitleChange (which updates store's notes map)
+                // We need to compare with the original persisted title if we want to avoid redundant saves.
+                // For simplicity, or if updateNote is idempotent, we can call it.
+                // Let's assume updateNote is efficient. The important part is that handleTitleChange
+                // has updated the in-memory representation in the store.
+                // To be more precise, we'd compare currentNote.title with what was last fetched/saved.
+                // For now, if it's different from the initial load OR if a save has occurred, it's fine.
+                // The most direct way is to check if the current title in component state (derived from store)
+                // is different from what's in `notes[currentNoteId].title` *before* `handleTitleChange` updated it.
+                // Since `handleTitleChange` updates the store directly, `currentNote.title` IS the latest.
+                // We only call updateNote to persist this latest version.
+                // A check against original fetched note could be done if original was stored separately.
+                // Alternative: only call if a "dirty" flag for title is set by onChange.
+                // console.log("Auto-saving title on blur...", currentNoteId);
+                updateNote(currentNoteId, { title: currentNote.title });
+              }
+            }}
             className="text-xl font-semibold border-none shadow-none p-0 h-auto bg-transparent"
             placeholder="Untitled Note"
             disabled={!isEditing}

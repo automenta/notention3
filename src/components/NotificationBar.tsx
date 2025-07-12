@@ -18,13 +18,12 @@ interface AppNotification {
 }
 
 export function NotificationBar() {
-  const { directMessages, matches, errors, setSidebarTab, userProfile } = useAppStore(state => ({
-    directMessages: state.directMessages,
-    matches: state.matches,
-    errors: state.errors, // Subscribe to errors
-    setSidebarTab: state.setSidebarTab,
-    userProfile: state.userProfile,
-  }));
+  // Subscribe to state slices individually to prevent re-renders from unrelated state changes.
+  const directMessages = useAppStore(state => state.directMessages);
+  const matches = useAppStore(state => state.matches);
+  const errors = useAppStore(state => state.errors);
+  const setSidebarTab = useAppStore(state => state.setSidebarTab);
+  const userProfile = useAppStore(state => state.userProfile);
 
   const [activeNotifications, setActiveNotifications] = useState<AppNotification[]>([]);
   const [lastSeenDmCount, setLastSeenDmCount] = useState(0);

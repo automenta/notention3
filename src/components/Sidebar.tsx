@@ -1,5 +1,5 @@
 import { FileText, Share2, Settings, Hash, MessageSquare, Plus, Users } from "lucide-react";
-import { useSyncExternalStore, useMemo } from "react";
+import { shallow } from 'zustand/shallow';
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -11,29 +11,15 @@ import { SettingsPanel } from "./SettingsPanel";
 import { ContactsPanel } from "./ContactsPanel"; // Import ContactsPanel
 
 export function Sidebar() {
-  const store = useAppStore.getState();
-
-  const getSnapshot = () => {
-    return {
-      sidebarTab: useAppStore.getState().sidebarTab,
-      searchQuery: useAppStore.getState().searchQuery,
-    };
-  };
-
-  const snapshot = useSyncExternalStore(
-    useAppStore.subscribe,
-    getSnapshot,
-    getSnapshot
-  );
-
-  const { sidebarTab, searchQuery } = useMemo(() => snapshot, [snapshot]);
-
-  const { setSidebarTab, createNote, setSearchQuery } = useAppStore(
+  const { sidebarTab, searchQuery, setSidebarTab, createNote, setSearchQuery } = useAppStore(
     (state) => ({
+      sidebarTab: state.sidebarTab,
+      searchQuery: state.searchQuery,
       setSidebarTab: state.setSidebarTab,
       createNote: state.createNote,
       setSearchQuery: state.setSearchQuery,
-    })
+    }),
+    shallow
   );
 
   const handleNewNote = async () => {

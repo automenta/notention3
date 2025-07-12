@@ -45,7 +45,11 @@ vi.mock('nostr-tools', async () => {
       encrypt: vi.fn(async (privkeyHex, pubkeyHex, text) => `encrypted_${text}_by_${privkeyHex}_for_${pubkeyHex}`),
       decrypt: vi.fn(async (privkeyHex, pubkeyHex, payload) => payload.replace(`encrypted_`, '').replace(`_by_${privkeyHex}_for_${pubkeyHex}`, '')),
     },
-    SimplePool: vi.fn(() => mockPoolInstance), // Use mockPoolInstance
+    SimplePool: class {
+      constructor() {
+        return mockPoolInstance;
+      }
+    },
     finalizeEvent: vi.fn((unsignedEvent, privateKeyHex) => {
       // A more complete mock for finalizeEvent:
       // It should add id, pubkey, sig to the event.
@@ -69,7 +73,7 @@ describe('NostrService', () => {
   let serviceInstance: NostrService;
   let mockPool: any; // To hold the mockPoolInstance for easier access in tests
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset mocks before each test
     vi.clearAllMocks();
 
@@ -78,9 +82,6 @@ describe('NostrService', () => {
     // It might be better if NostrService was not a singleton for easier testing,
     // or had a reset method for tests.
     serviceInstance = nostrServiceInstance;
-    // Manually reset internal state of the singleton for test isolation
-    (serviceInstance as any).privateKey = null;
-    (serviceInstance as any).publicKey = null;
     // Mock that DBService returns null initially for keys
     // Ensure DBService methods are mock functions. If vi.mock('./db') is effective, they should be.
     if (typeof (DBService.getNostrPrivateKey as any).mockResolvedValue === 'function') {
@@ -102,14 +103,11 @@ describe('NostrService', () => {
     // We can access its methods directly via the SimplePool constructor mock if it's stable.
     // Let's get a reference to the mock pool instance used by SimplePool mock
     const NostrToolsMocks = await vi.importActual('nostr-tools') as any; // To get the mocked SimplePool
-    mockPool = NostrToolsMocks.SimplePool(); // This should return our mockPoolInstance
+    mockPool = new NostrToolsMocks.SimplePool(); // This should return our mockPoolInstance
 
 
     // Re-initialize the singleton or get a fresh instance for testing if possible.
     serviceInstance = NostrService.getInstance(); // Use the actual getInstance method
-    // Manually reset internal state of the singleton for test isolation
-    (serviceInstance as any).privateKey = null;
-    (serviceInstance as any).publicKey = null;
 
     // Ensure DBService methods are mock functions and reset them
     vi.mocked(DBService.getNostrPrivateKey).mockResolvedValue(null);
@@ -301,7 +299,6 @@ describe('NostrService', () => {
 
   describe('Event Subscription', () => {
     const mockFilters = [{ kinds: [1] }];
-    const mockFilters = [{ kinds: [1] }] as Filter[]; // Use Filter type
     const onEventCallback = vi.fn();
     let mockSub: any; // To hold the subscription object returned by pool.sub
 

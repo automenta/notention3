@@ -12,13 +12,10 @@ vi.mock("@langchain/community/llms/ollama");
 vi.mock("@langchain/community/embeddings/ollama");
 vi.mock("@langchain/google-genai");
 vi.mock("@langchain/core/output_parsers");
-let capturedPromptMessages: any[] = []; // To store the messages passed to ChatPromptTemplate.fromMessages
-let mockChatPromptTemplateInstance: any; // To store the instance returned by fromMessages
 
 vi.mock("@langchain/core/prompts", async () => {
     const actual = await vi.importActual("@langchain/core/prompts") as any;
-    // Define a base mock for the chainable prompt template instance
-    mockChatPromptTemplateInstance = {
+    const mockChatPromptTemplateInstance = {
         pipe: vi.fn().mockReturnThis(), // For chaining: prompt.pipe(model)
         invoke: vi.fn(), // For: prompt.invoke(input)
     };
@@ -27,7 +24,7 @@ vi.mock("@langchain/core/prompts", async () => {
         ChatPromptTemplate: {
             ...actual.ChatPromptTemplate, // Spread actual ChatPromptTemplate if it has other static methods
             fromMessages: vi.fn((messages) => {
-                capturedPromptMessages = messages; // Capture messages
+                (global as any).capturedPromptMessages = messages; // Capture messages
                 // Reset the mock instance's methods for each call to fromMessages
                 // to ensure clean state for chained calls like pipe().pipe().invoke()
                 mockChatPromptTemplateInstance.pipe.mockClear().mockReturnThis();

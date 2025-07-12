@@ -89,7 +89,7 @@ export function DirectMessagesPanel() {
   // Virtualizer for messages
   const rowVirtualizer = useVirtualizer({
     count: currentChatMessages.length,
-    getScrollElement: () => messagesScrollParentRef.current,
+    getScrollElement: useCallback(() => messagesScrollParentRef.current, []),
     estimateSize: useCallback(() => 70, []), // Estimate 70px per message row, adjust as needed
     overscan: 10,
   });

@@ -1,37 +1,36 @@
+vi.mock('localforage', () => {
+  const mockLocalForageStore: Record<string, any> = {};
+  const mockLocalForageInstance = {
+    setItem: vi.fn(async (key, value) => {
+      mockLocalForageStore[key] = value;
+      return value;
+    }),
+    getItem: vi.fn(async (key) => mockLocalForageStore[key] || null),
+    removeItem: vi.fn(async (key) => {
+      delete mockLocalForageStore[key];
+    }),
+    clear: vi.fn(async () => {
+      for (const key in mockLocalForageStore) {
+        delete mockLocalForageStore[key];
+      }
+    }),
+    iterate: vi.fn(async (iterator: (value: any, key: string, iterationNumber: number) => any) => {
+      let i = 0;
+      for (const key in mockLocalForageStore) {
+        iterator(mockLocalForageStore[key], key, i++);
+      }
+    }),
+    // createInstance: vi.fn(() => mockLocalForageInstance), // This was causing issues, direct use is fine for mock
+  };
+  return {
+    default: {
+      createInstance: () => mockLocalForageInstance,
+    },
+  };
+});
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DBService, SyncQueueNoteOp } from './db'; // Import DBService and SyncQueueNoteOp
 import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, DirectMessage } from '../../shared/types';
-
-// Mock localforage
-const mockLocalForageStore: Record<string, any> = {};
-const mockLocalForageInstance = {
-  setItem: vi.fn(async (key, value) => {
-    mockLocalForageStore[key] = value;
-    return value;
-  }),
-  getItem: vi.fn(async (key) => mockLocalForageStore[key] || null),
-  removeItem: vi.fn(async (key) => {
-    delete mockLocalForageStore[key];
-  }),
-  clear: vi.fn(async () => {
-    for (const key in mockLocalForageStore) {
-      delete mockLocalForageStore[key];
-    }
-  }),
-  iterate: vi.fn(async (iterator: (value: any, key: string, iterationNumber: number) => any) => {
-    let i = 0;
-    for (const key in mockLocalForageStore) {
-      iterator(mockLocalForageStore[key], key, i++);
-    }
-  }),
-  // createInstance: vi.fn(() => mockLocalForageInstance), // This was causing issues, direct use is fine for mock
-};
-
-vi.mock('localforage', () => ({
-  default: {
-    createInstance: () => mockLocalForageInstance,
-  },
-}));
 
 
 describe('DBService', () => {

@@ -374,7 +374,7 @@ export function NotesList({ viewMode }: NotesListProps) {
   // Virtualizer instance
   const rowVirtualizer = useVirtualizer({
     count: displayedItems.length,
-    getScrollElement: () => parentScrollRef.current,
+    getScrollElement: useCallback(() => parentScrollRef.current, []),
     estimateSize: useCallback((index: number) => {
       // Estimate size based on item type and content complexity
       // This is a rough estimate. A more accurate measurement would be better.

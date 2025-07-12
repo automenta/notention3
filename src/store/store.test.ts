@@ -36,24 +36,25 @@ const initialUserProfile: UserProfile = {
   }
 };
 
-const mockNewFolderData: Folder = { // Use Folder type
-  id: 'folder-123',
-  name: "My Test Folder",
-  parentId: undefined,
-  noteIds: [],
-  children: [],
-  createdAt: new Date(),
-  updatedAt: new Date()
-};
-
-vi.mock('../services/FolderService', () => ({
+vi.mock('../services/FolderService', () => {
+  const mockNewFolderData: Folder = {
+    id: 'folder-123',
+    name: "My Test Folder",
+    parentId: undefined,
+    noteIds: [],
+    children: [],
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  return {
     FolderService: {
-        createFolder: vi.fn().mockResolvedValue(mockNewFolderData),
-        updateFolder: vi.fn(),
-        deleteFolder: vi.fn(),
-        getAllFolders: vi.fn().mockResolvedValue([]),
+      createFolder: vi.fn().mockResolvedValue(mockNewFolderData),
+      updateFolder: vi.fn(),
+      deleteFolder: vi.fn(),
+      getAllFolders: vi.fn().mockResolvedValue([]),
     }
-}));
+  };
+});
 
 describe('App Store', () => {
   const baseInitialState = {

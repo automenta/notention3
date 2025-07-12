@@ -1,4 +1,5 @@
-import { FileText, Share2, Settings, Hash, MessageSquare, Plus, Users } from "lucide-react"; // Added MessageSquare, Users
+import { FileText, Share2, Settings, Hash, MessageSquare, Plus, Users } from "lucide-react";
+import { useCallback, useSyncExternalStore } from "react";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -10,13 +11,26 @@ import { SettingsPanel } from "./SettingsPanel";
 import { ContactsPanel } from "./ContactsPanel"; // Import ContactsPanel
 
 export function Sidebar() {
-  const { sidebarTab, setSidebarTab, createNote, searchQuery, setSearchQuery } = useAppStore(
+  const store = useAppStore.getState();
+
+  const getSnapshot = useCallback(() => {
+    return {
+      sidebarTab: store.sidebarTab,
+      searchQuery: store.searchQuery,
+    };
+  }, [store]);
+
+  const { sidebarTab, searchQuery } = useSyncExternalStore(
+    useAppStore.subscribe,
+    getSnapshot,
+    getSnapshot
+  );
+
+  const { setSidebarTab, createNote, setSearchQuery } = useAppStore(
     (state) => ({
-      sidebarTab: state.sidebarTab,
       setSidebarTab: state.setSidebarTab,
       createNote: state.createNote,
-      searchQuery: state.searchQuery,
-      setSearchQuery: state.setSearchQuery, // Correctly get setSearchQuery
+      setSearchQuery: state.setSearchQuery,
     })
   );
 

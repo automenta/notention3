@@ -1,51 +1,54 @@
-vi.mock('localforage', () => {
-  const mockLocalForageStore: Record<string, any> = {};
-  const mockLocalForageInstance = {
-    setItem: vi.fn(async (key, value) => {
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock localforage using vi.doMock to avoid hoisting issues
+const mockLocalForageStore: Record<string, any> = {};
+const mockLocalForageInstance = {
+  setItem: vi.fn(),
+  getItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+  iterate: vi.fn(),
+};
+
+vi.doMock('localforage', () => ({
+  default: {
+    createInstance: vi.fn(() => mockLocalForageInstance),
+  },
+}));
+
+// Now, import the modules that use the mocked localforage
+const { DBService } = await import('./db');
+import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, DirectMessage, SyncQueueNoteOp } from '../../shared/types';
+
+describe('DBService', () => {
+  beforeEach(() => {
+    // Reset mocks and the in-memory store before each test
+    vi.clearAllMocks();
+    for (const key in mockLocalForageStore) {
+      delete mockLocalForageStore[key];
+    }
+
+    // Setup mock implementations for the new test
+    mockLocalForageInstance.setItem.mockImplementation(async (key, value) => {
       mockLocalForageStore[key] = value;
       return value;
-    }),
-    getItem: vi.fn(async (key) => mockLocalForageStore[key] || null),
-    removeItem: vi.fn(async (key) => {
+    });
+    mockLocalForageInstance.getItem.mockImplementation(async (key) => mockLocalForageStore[key] || null);
+    mockLocalForageInstance.removeItem.mockImplementation(async (key) => {
       delete mockLocalForageStore[key];
-    }),
-    clear: vi.fn(async () => {
+    });
+    mockLocalForageInstance.clear.mockImplementation(async () => {
       for (const key in mockLocalForageStore) {
         delete mockLocalForageStore[key];
       }
-    }),
-    iterate: vi.fn(async (iterator: (value: any, key: string, iterationNumber: number) => any) => {
+    });
+    mockLocalForageInstance.iterate.mockImplementation(async (iterator) => {
       let i = 0;
       for (const key in mockLocalForageStore) {
         iterator(mockLocalForageStore[key], key, i++);
       }
-    }),
-    // createInstance: vi.fn(() => mockLocalForageInstance), // This was causing issues, direct use is fine for mock
-  };
-  return {
-    default: {
-      createInstance: () => mockLocalForageInstance,
-    },
-  };
-});
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DBService, SyncQueueNoteOp } from './db'; // Import DBService and SyncQueueNoteOp
-import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, DirectMessage } from '../../shared/types';
-
-
-describe('DBService', () => {
-  // Helper to clear the mock store before each test specific to a localforage instance
-  const clearMockStoreForInstance = () => {
-    for (const key in mockLocalForageStore) {
-      delete mockLocalForageStore[key];
-    }
-    mockLocalForageInstance.setItem.mockClear();
-    mockLocalForageInstance.getItem.mockClear();
-    mockLocalForageInstance.removeItem.mockClear();
-    mockLocalForageInstance.clear.mockClear();
-    mockLocalForageInstance.iterate.mockClear();
-  };
-
+    });
+  });
 
   describe('Notes Operations', () => {
     const testNote: Note = {
@@ -59,10 +62,6 @@ describe('DBService', () => {
       createdAt: new Date('2023-01-01T10:00:00Z'),
       updatedAt: new Date('2023-01-01T11:00:00Z'),
     };
-
-    beforeEach(() => {
-      clearMockStoreForInstance();
-    });
 
     it('should save and get a note', async () => {
       await DBService.saveNote(testNote);
@@ -123,10 +122,6 @@ describe('DBService', () => {
       updatedAt: new Date('2023-02-01T10:00:00Z'),
     };
 
-    beforeEach(() => {
-      clearMockStoreForInstance();
-    });
-
     it('should save and get ontology', async () => {
       await DBService.saveOntology(testOntology);
       const savedItem = mockLocalForageStore['tree'];
@@ -163,10 +158,6 @@ describe('DBService', () => {
       preferences: { theme: 'dark', aiEnabled: true, defaultNoteStatus: 'published' },
     };
 
-    beforeEach(() => {
-      clearMockStoreForInstance();
-    });
-
     it('should save and get user profile', async () => {
       await DBService.saveUserProfile(testProfile);
       const retrievedProfile = await DBService.getUserProfile();
@@ -192,9 +183,6 @@ describe('DBService', () => {
     const testFolder: Folder = {
       id: 'folder1', name: 'Test Folder', noteIds: [], children: [], createdAt: new Date(), updatedAt: new Date()
     };
-     beforeEach(() => {
-      clearMockStoreForInstance();
-    });
 
     it('should save and get a folder', async () => {
       await DBService.saveFolder(testFolder);
@@ -227,9 +215,6 @@ describe('DBService', () => {
     const testTemplate: NotentionTemplate = {
       id: 'template1', name: 'Test Template', description: '', fields: [], defaultTags: [], defaultValues: {}
     };
-    beforeEach(() => {
-      clearMockStoreForInstance();
-    });
 
     it('should save and get a template', async () => {
       await DBService.saveTemplate(testTemplate);
@@ -269,7 +254,7 @@ describe('DBService', () => {
       id: 'dm1', from: 'userA', to: 'userB', content: 'Hello', timestamp: new Date(), encrypted: true
     };
     beforeEach(() => {
-      clearMockStoreForInstance();
+      clearMockStoreAndMocks();
     });
 
     it('should save and get a message', async () => {
@@ -309,7 +294,7 @@ describe('DBService', () => {
 
   describe('Import/Export Operations', () => {
      beforeEach(() => {
-      clearMockStoreForInstance();
+      clearMockStoreAndMocks();
     });
 
     it('should export data from all stores', async () => {
@@ -377,7 +362,7 @@ describe('DBService', () => {
     const op2: SyncQueueNoteOp = { noteId: 'qn2', action: 'delete', timestamp: new Date('2023-04-02'), nostrEventId: 'evt123' };
 
     beforeEach(() => {
-      clearMockStoreForInstance();
+      clearMockStoreAndMocks();
     });
 
     it('should add, get, and remove note operations from sync queue', async () => {
@@ -441,7 +426,7 @@ describe('DBService', () => {
 
   describe('Ontology Sync Flag Operations', () => {
      beforeEach(() => {
-      clearMockStoreForInstance();
+      clearMockStoreAndMocks();
     });
 
     it('should set and get ontology needs sync flag', async () => {

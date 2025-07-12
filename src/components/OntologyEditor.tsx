@@ -205,7 +205,7 @@ export function OntologyEditor() {
     setActiveId(event.active.id);
   };
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
 

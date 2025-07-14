@@ -33,9 +33,10 @@ import { OntologyService } from "../services/ontology";
 import { aiService } from "../services/AIService"; // Import AI Service
 import { toast } from "sonner"; // For notifications
 import { LoadingSpinner } from "./ui/loading-spinner"; // For loading state
+import { OntologySortableNode } from './OntologySortableNode';
 
 export function OntologyEditor() {
-  const { ontology, updateOntology, setOntology: setStoreOntology, userProfile } = useAppStore();
+  const { ontology, setOntology: setStoreOntology, userProfile } = useAppStore(); // Removed updateOntology
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
   // AI Suggestions State
@@ -99,8 +100,7 @@ export function OntologyEditor() {
     const newOntologyState = OntologyService.addNode(ontology, newNode);
 
     try {
-      await updateOntology(newOntologyState); // Attempt to save to DB via store action
-      setStoreOntology(newOntologyState); // Update Zustand store state upon successful save
+      await setStoreOntology(newOntologyState); // Update Zustand store state upon successful save
 
       setNewNodeLabel("");
       setNewNodeParentId(undefined);
@@ -119,8 +119,7 @@ export function OntologyEditor() {
 
   const handleDeleteNode = async (nodeId: string) => {
     const newOntology = OntologyService.removeNode(ontology, nodeId);
-    await updateOntology(newOntology);
-    setStoreOntology(newOntology);
+    await setStoreOntology(newOntology);
   };
 
   const handleUpdateNode = async () => {
@@ -132,8 +131,7 @@ export function OntologyEditor() {
     };
 
     const newOntology = OntologyService.updateNode(ontology, editingNode.id, updates);
-    await updateOntology(newOntology);
-    setStoreOntology(newOntology);
+    await setStoreOntology(newOntology);
     handleCloseEditDialog();
   };
 
@@ -142,7 +140,7 @@ export function OntologyEditor() {
   };
 
   const handleAddAttribute = () => {
-    setEditNodeAttributes(prev => ({...prev, "":""})); // Add a new empty attribute
+    setEditNodeAttributes(prev => ({...prev, "":"-"})); // Add a new empty attribute
   }
 
   const handleRemoveAttribute = (key: string) => {
@@ -185,8 +183,7 @@ export function OntologyEditor() {
     try {
       const newNode = OntologyService.createNode(suggestedNode.label, suggestedNode.parentId, suggestedNode.attributes);
       const newOntology = OntologyService.addNode(ontology, newNode);
-      await updateOntology(newOntology);
-      setStoreOntology(newOntology);
+      await setStoreOntology(newOntology);
       toast.success(`Added suggested concept: ${suggestedNode.label}`);
       // Remove the added suggestion from the list
       setAISuggestions(prev => prev.filter(s => s.label !== suggestedNode.label));
@@ -195,90 +192,7 @@ export function OntologyEditor() {
     }
   };
 
-  // Recursive function to render nodes
-  const renderNode = (node: OntologyNode, level: number = 0): JSX.Element => {
-    const {
-      attributes: dndAttributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: node.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-      paddingLeft: `${level * 20 + 8}px`, // Indentation based on level
-    };
-
-    const children = getChildNodes(node.id);
-    const hasChildren = children.length > 0;
-    const isExpanded = expandedNodes.has(node.id);
-
-    return (
-      <div ref={setNodeRef} style={style} className="mb-1 bg-card group" {...dndAttributes}>
-        <div 
-          className={`flex items-center gap-1 p-2 rounded hover:bg-accent ${isDragging ? 'shadow-lg' : ''}`}
-        >
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 cursor-grab group-hover:opacity-100 opacity-25" {...listeners}>
-            <GripVertical size={14} />
-          </Button>
-          {hasChildren ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id); }}
-            >
-              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </Button>
-          ) : (
-            <div className="w-6" /> // Placeholder for alignment
-          )}
-
-          <Badge variant="outline" className="text-xs cursor-default truncate max-w-xs">
-            {node.label}
-          </Badge>
-          {node.attributes && Object.keys(node.attributes).length > 0 && (
-            <Badge variant="secondary" className="text-xs ml-1 cursor-default truncate max-w-xs hidden sm:inline-block">
-              {Object.entries(node.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}
-            </Badge>
-          )}
-
-          <div className="flex items-center gap-1 ml-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(node);}}
-            >
-              <Edit2 size={12} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-destructive"
-              onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id);}}
-            >
-              <Trash2 size={12} />
-            </Button>
-          </div>
-        </div>
-
-        {hasChildren && isExpanded && (
-          <div className="pl-0"> {/* No extra padding here, parent div controls it */}
-            {/* For SortableContext with children, ensure items are direct descendants or manage IDs carefully */}
-            {/* This basic SortableContext might need adjustment for nested D&D if children are also sortable independently */}
-            <SortableContext items={children.map(c => c.id)} strategy={verticalListSortingStrategy}>
-              {children.map(child => renderNode(child, level + 1))}
-            </SortableContext>
-          </div>
-        )}
-      </div>
-    );
-  };
+  
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -291,7 +205,7 @@ export function OntologyEditor() {
     setActiveId(event.active.id);
   };
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
 
@@ -327,9 +241,9 @@ export function OntologyEditor() {
     // For now, let's assume basic reordering first, then consider re-parenting.
 
     // Attempt to find the parent of the 'over' node to determine if it's a sibling reorder
-    let targetParentId = overNode?.parentId;
-    let targetList = targetParentId ? ontology.nodes[targetParentId]?.children || [] : ontology.rootIds;
-    let newIndex = targetList.indexOf(overNodeId);
+    const targetParentId = overNode?.parentId;
+    const targetList = targetParentId ? ontology.nodes[targetParentId]?.children || [] : ontology.rootIds;
+    const newIndex = targetList.indexOf(overNodeId);
 
     if (oldParentId === targetParentId) { // Reordering within the same list (siblings or root items)
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -373,11 +287,10 @@ export function OntologyEditor() {
     }
 
     if (newOntology !== ontology) {
-      updateOntology(newOntology); // Persist via store action (which should call DB)
-      setStoreOntology(newOntology); // Update Zustand state
+      await setStoreOntology(newOntology); // Persist and Update Zustand state
       toast.success(`Ontology item '${activeNode.label}' moved.`);
     }
-  }, [ontology, updateOntology, setStoreOntology]);
+  }, [ontology, setStoreOntology]);
 
   const handleExportOntology = () => {
     if (!ontology || Object.keys(ontology.nodes).length === 0) {
@@ -424,8 +337,7 @@ export function OntologyEditor() {
           }
         }
 
-        await updateOntology(importedOntology); // This should save to DB via store action
-        setStoreOntology(importedOntology); // Update store state
+        await setStoreOntology(importedOntology); // Update store state & save to DB
         toast.success("Ontology imported successfully!");
       } catch (error) {
         toast.error("Failed to import ontology.", { description: String(error) });
@@ -447,249 +359,34 @@ export function OntologyEditor() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Ontology</h2>
-            <div className="flex items-center gap-2">
-             <div className="flex items-center gap-1"> {/* Reduced gap */}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleExportOntology}
-                className="text-xs px-2 h-8" /* Smaller padding and height */
-              >
-                Export
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => document.getElementById('import-ontology-file')?.click()}>
-                className="text-xs px-2 h-8"
-              >
-                Import
-              </Button>
-              <input
-                type="file"
-                id="import-ontology-file"
-                accept=".json"
-                onChange={handleImportOntology}
-                className="hidden"
-              />
-            </div>
-             {userProfile?.preferences.aiEnabled && aiService.isAIEnabled() && (
-                <Dialog open={isAISuggestionsDialogOpen} onOpenChange={setIsAISuggestionsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="text-xs px-2 h-8">
-                    <Sparkles size={14} className="mr-1" /> AI Suggest
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>AI Ontology Suggestions</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div>
-                      <label htmlFor="aiSuggestionContext" className="text-sm font-medium">
-                        Context (Optional)
-                      </label>
-                      <Textarea
-                        id="aiSuggestionContext"
-                        value={aiSuggestionContext}
-                        onChange={(e) => setAISuggestionContext(e.target.value)}
-                        placeholder="Provide context like a note, a domain, or specific area of interest..."
-                        className="min-h-[80px]"
-                      />
-                    </div>
-                    <Button onClick={handleFetchAISuggestions} disabled={isFetchingAISuggestions} className="w-full">
-                      {isFetchingAISuggestions ? (
-                        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Wand2 size={16} className="mr-2" />
-                      )}
-                      Get Suggestions
-                    </Button>
-                    {aiSuggestions.length > 0 && (
-                      <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
-                        <h3 className="text-sm font-medium">Suggestions:</h3>
-                        {aiSuggestions.map((suggestion, index) => (
-                          <Card key={index} className="p-3">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-semibold">{suggestion.label}</p>
-                              <Button size="xs" onClick={() => handleAddSuggestedNode(suggestion)}>
-                                <Plus size={12} className="mr-1"/> Add
-                              </Button>
-                            </div>
-                            {suggestion.parentId && <p className="text-xs text-muted-foreground">Parent: {ontology.nodes[suggestion.parentId]?.label || suggestion.parentId}</p>}
-                            {suggestion.attributes && <p className="text-xs text-muted-foreground">Attributes: {JSON.stringify(suggestion.attributes)}</p>}
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline">Close</Button>
-                    </DialogClose>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            )}
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="text-xs px-2 h-8"> {/* Smaller padding and height */}
-                  <Plus size={14} className="mr-1" /> Add Concept {/* Smaller icon and margin */}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add New Concept</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <label htmlFor="newNodeLabel" className="text-sm font-medium">Label</label>
-                  <Input
-                    id="newNodeLabel"
-                    value={newNodeLabel}
-                    onChange={(e) => setNewNodeLabel(e.target.value)}
-                    placeholder="e.g., AI, Project, Person"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="newNodeParent" className="text-sm font-medium">Parent (optional)</label>
-                  <select
-                    id="newNodeParent"
-                    value={newNodeParentId || ""}
-                    onChange={(e) => setNewNodeParentId(e.target.value || undefined)}
-                    className="w-full p-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md text-sm"
-                  >
-                    <option value="">Root level</option>
-                    {Object.values(ontology.nodes).map(node => (
-                      <option key={node.id} value={node.id}>
-                        {node.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleAddNode}>
-                  <Plus size={16} className="mr-2" /> Add Concept
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {(!ontology || Object.keys(ontology.nodes).length === 0) ? (
-          <div className="text-center text-muted-foreground py-8">
-            <Hash size={48} className="mx-auto mb-4 opacity-50" />
-            <p>No concepts yet</p>
-            <p className="text-sm mt-1">Create your first concept to organize your notes</p>
-          </div>
-        ) : (
-          <SortableContext
-            items={ontology.rootIds?.map(id => ontology.nodes[id]).filter(Boolean).map(n => n.id) || []}
-            strategy={verticalListSortingStrategy}
-          >
-            <div> {/* This div wraps the mapped nodes */}
-              {ontology.rootIds?.map(rootId => {
-                const node = ontology.nodes[rootId];
-                return node ? renderNode(node, 0) : null; // Pass level 0 for root nodes
-              })}
-            </div>
-          </SortableContext>
-          <DragOverlay>
-            {activeNode ? (
-              <div className="p-2 rounded bg-primary text-primary-foreground shadow-xl opacity-90">
-                <Badge variant="default">{activeNode.label}</Badge>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </div>
-        )}
-
-        {/* Edit Node Dialog */}
-        {editingNode && (
-          <Dialog open={!!editingNode} onOpenChange={(open) => !open && handleCloseEditDialog()}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Edit Concept: {editingNode.label}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div>
-                  <label htmlFor="editNodeLabel" className="text-sm font-medium">Label</label>
-                  <Input
-                    id="editNodeLabel"
-                    value={editNodeLabel}
-                    onChange={(e) => setEditNodeLabel(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Attributes</label>
-                  {Object.entries(editNodeAttributes).map(([key, value], index) => (
-                    <div key={index} className="flex items-center gap-2 mt-1">
-                      <Input
-                        value={key}
-                        onChange={(e) => {
-                          const newKey = e.target.value;
-                          const oldKey = Object.keys(editNodeAttributes)[index];
-                          const {[oldKey]: _, ...rest} = editNodeAttributes;
-                          setEditNodeAttributes({...rest, [newKey]: value});
-                        }}
-                        placeholder="Attribute Name"
-                        className="flex-1"
-                      />
-                      <Input
-                        value={value}
-                        onChange={(e) => handleAttributeChange(key, e.target.value)}
-                        placeholder="Attribute Value"
-                        className="flex-1"
-                      />
-                      <Button variant="ghost" size="sm" onClick={() => handleRemoveAttribute(key)}>
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button variant="outline" size="sm" onClick={handleAddAttribute} className="mt-2">
-                    <Plus size={14} className="mr-1" /> Add Attribute
-                  </Button>
-                </div>
-              </div>
-              <DialogFooter>
-                 <DialogClose asChild>
-                  <Button variant="outline" onClick={handleCloseEditDialog}>Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleUpdateNode}>
-                  <Save size={16} className="mr-2" /> Save Changes
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
-        {/* Ontology Info Card */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-sm">About Ontology</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground space-y-2">
-            <p>
-              The ontology helps organize your notes with semantic structure. 
-              Tags like #AI can have children like #MachineLearning and #NLP.
-            </p>
-            <p>
-              Use # for topics (e.g. #AI) and @ for people (e.g. @JohnDoe).
-              Relationships enable smart matching - searching for notes tagged with #AI will also find notes tagged with #NLP if #NLP is a child of #AI.
-            </p>
-            <p>
-              You can define attributes for concepts, like `due:date` for a #Project, which can then be used in notes.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        <SortableContext items={ontology.rootIds} strategy={verticalListSortingStrategy}>
+          {ontology.rootIds.map(rootId => (
+            <OntologySortableNode
+              key={rootId}
+              node={ontology.nodes[rootId]}
+              level={0}
+              toggleExpanded={toggleExpanded}
+              handleOpenEditDialog={handleOpenEditDialog}
+              handleDeleteNode={handleDeleteNode}
+              ontology={ontology}
+              expandedNodes={expandedNodes}
+            />
+          ))}
+        </SortableContext>
+        <DragOverlay>
+          {activeId && activeNode ? (
+            <OntologySortableNode
+              node={activeNode}
+              level={0} // Level doesn't matter for drag overlay, but needs a value
+              toggleExpanded={toggleExpanded}
+              handleOpenEditDialog={handleOpenEditDialog}
+              handleDeleteNode={handleDeleteNode}
+              ontology={ontology}
+              expandedNodes={expandedNodes}
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </ScrollArea>
   );
 }

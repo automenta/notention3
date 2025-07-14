@@ -95,7 +95,7 @@ export function NotesList({ viewMode }: NotesListProps) {
           searchFilters,
           allNotes
         );
-        let sortedNotes = [...results]; // Create a mutable copy for sorting
+        const sortedNotes = [...results]; // Create a mutable copy for sorting
 
         // Primary sort logic based on sortOption and sortDirection
         sortedNotes.sort((a, b) => {
@@ -161,7 +161,7 @@ export function NotesList({ viewMode }: NotesListProps) {
     };
 
     performSearchAndFilter();
-  }, [viewMode, debouncedSearchTerm, ontology, allNotes, searchFilters, directMessages, userProfile?.nostrPubkey]);
+  }, [viewMode, debouncedSearchTerm, ontology, allNotes, searchFilters, directMessages, userProfile?.nostrPubkey, sortOption, sortDirection]);
 
 
   const handleItemClick = (item: Note | DirectMessage) => {
@@ -297,7 +297,7 @@ export function NotesList({ viewMode }: NotesListProps) {
         </div>
         {isExpanded && folderNode.childrenNodes && folderNode.childrenNodes.length > 0 && (
           <div className="pl-3 border-l border-dashed border-muted-foreground/20 ml-[11px]">
-            {folderNode.childrenNodes.map(child => renderFolderNode(child, 0))}
+            {folderNode.childrenNodes.map(child => renderFolderNode(child, level + 1))}
           </div>
         )}
       </div>
@@ -342,7 +342,7 @@ export function NotesList({ viewMode }: NotesListProps) {
         </div>
         {isExpanded && children.length > 0 && (
           <div className="pl-2 border-l border-dashed border-muted-foreground/30 ml-[9px]"> {/* Indent children further, add guide line */}
-            {children.map(child => renderOntologyFilterNode(child, 0))} {/* level reset for children as padding is on parent */}
+            {children.map(child => renderOntologyFilterNode(child, level + 1))} {/* level reset for children as padding is on parent */}
           </div>
         )}
       </div>
@@ -370,6 +370,30 @@ export function NotesList({ viewMode }: NotesListProps) {
     const text = content.replace(/<[^>]*>/g, '');
     return text.length > 100 ? text.substring(0, 100) + '...' : text;
   };
+
+  // Virtualizer instance
+  const rowVirtualizer = useVirtualizer({
+    count: displayedItems.length,
+    getScrollElement: useCallback(() => parentScrollRef.current, []),
+    estimateSize: useCallback((index: number) => {
+      // Estimate size based on item type and content complexity
+      // This is a rough estimate. A more accurate measurement would be better.
+      const item = displayedItems[index];
+      if (!item) return 100; // Default fallback
+
+      if (viewMode === 'notes') {
+        const note = item as Note;
+        let height = 60; // Base height for title, date
+        if (note.content) height += 18; // For preview line
+        if (note.tags.length > 0) height += 22; // For tags line
+        return Math.max(80, Math.min(height, 120)); // Clamp between 80 and 120
+      } else if (viewMode === 'chats') {
+        return 70; // DMs are simpler, more fixed height
+      }
+      return 100; // Default
+    }, [displayedItems, viewMode]),
+    overscan: 5, // Render a few items outside the viewport for smoother scrolling
+  });
 
   return (
     <div className="h-full flex flex-col">
@@ -632,27 +656,4 @@ export function NotesList({ viewMode }: NotesListProps) {
     </div>
   );
 
-  // Virtualizer instance
-  const rowVirtualizer = useVirtualizer({
-    count: displayedItems.length,
-    getScrollElement: () => parentScrollRef.current,
-    estimateSize: useCallback((index: number) => {
-      // Estimate size based on item type and content complexity
-      // This is a rough estimate. A more accurate measurement would be better.
-      const item = displayedItems[index];
-      if (!item) return 100; // Default fallback
-
-      if (viewMode === 'notes') {
-        const note = item as Note;
-        let height = 60; // Base height for title, date
-        if (note.content) height += 18; // For preview line
-        if (note.tags.length > 0) height += 22; // For tags line
-        return Math.max(80, Math.min(height, 120)); // Clamp between 80 and 120
-      } else if (viewMode === 'chats') {
-        return 70; // DMs are simpler, more fixed height
-      }
-      return 100; // Default
-    }, [displayedItems, viewMode]),
-    overscan: 5, // Render a few items outside the viewport for smoother scrolling
-  });
 }

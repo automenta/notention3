@@ -147,7 +147,7 @@ export interface AppState {
   
   // UI state
   currentNoteId?: string;
-  sidebarTab: "notes" | "ontology" | "network" | "settings" | "contacts"; // Added 'contacts'
+  sidebarTab: "notes" | "ontology" | "network" | "settings" | "contacts" | "chats"; // Added 'contacts' and 'chats'
   searchQuery: string;
   searchFilters: SearchFilters;
   

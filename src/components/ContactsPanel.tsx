@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { UserPlus, Users, Trash2, MessageSquare, Edit3, Check, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea'; // Import Textarea
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "./ui/dialog";
 import { ScrollArea } from './ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
@@ -53,8 +54,7 @@ function SendDmModal({ isOpen, onOpenChange, recipientPubkey, recipientAlias }: 
           <DialogDescription>To: {recipientAlias || recipientPubkey.substring(0,10) + '...'}</DialogDescription>
         </DialogHeader>
         <div className="py-4">
-          <Input
-            type="textarea" // Assuming Input can be textarea via props, or use Textarea component
+          <Textarea
             value={dmContent}
             onChange={(e) => setDmContent(e.target.value)}
             placeholder="Your encrypted message..."

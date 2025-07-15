@@ -1,24 +1,27 @@
-import { html, LitElement } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-
-@customElement('notention-router')
-export class Router extends LitElement {
-  @property({ type: String }) currentPath: string = window.location.pathname;
+export class Router extends HTMLElement {
+  private currentPath: string = window.location.pathname;
 
   constructor() {
     super();
-    window.addEventListener('popstate', this._handleLocationChange.bind(this));
-    window.addEventListener('notention-navigate', this._handleNavigation.bind(this) as EventListener);
+    this.attachShadow({ mode: 'open' });
+    this._handleLocationChange = this._handleLocationChange.bind(this);
+    this._handleNavigation = this._handleNavigation.bind(this);
   }
 
   connectedCallback() {
-    super.connectedCallback();
+    window.addEventListener('popstate', this._handleLocationChange);
+    window.addEventListener('notention-navigate', this._handleNavigation as EventListener);
     this._handleLocationChange();
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('popstate', this._handleLocationChange);
+    window.removeEventListener('notention-navigate', this._handleNavigation as EventListener);
   }
 
   private _handleLocationChange() {
     this.currentPath = window.location.pathname;
-    this.requestUpdate();
+    this.render();
   }
 
   private _handleNavigation(event: CustomEvent) {
@@ -30,18 +33,34 @@ export class Router extends LitElement {
   }
 
   render() {
-    const routes = Array.from(this.querySelectorAll('notention-route'));
-    const currentRoute = routes.find(route => {
+    if (!this.shadowRoot) return;
+
+    const routes = Array.from(this.querySelectorAll('notention-route')) as HTMLCollectionOf<HTMLElement & { path: string, component: string }>;
+    const currentRoute = Array.from(routes).find(route => {
       const path = route.getAttribute('path');
       return path && this.currentPath.startsWith(path);
     });
 
+    this.shadowRoot.innerHTML = ''; // Clear previous content
+
     if (currentRoute) {
       const componentTag = currentRoute.getAttribute('component');
       if (componentTag) {
-        return html`<${componentTag}></${componentTag}>`;
+        const componentElement = document.createElement(componentTag);
+        // Pass attributes from the route to the component if needed
+        // For example, if a route is /note?id=123, you might want to pass 'id' to the note editor
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.forEach((value, key) => {
+          componentElement.setAttribute(key, value);
+        });
+        this.shadowRoot.appendChild(componentElement);
       }
+    } else {
+      const notFoundDiv = document.createElement('div');
+      notFoundDiv.textContent = '404 - Not Found';
+      this.shadowRoot.appendChild(notFoundDiv);
     }
-    return html`<div>404 - Not Found</div>`;
   }
 }
+
+customElements.define('notention-router', Router);

@@ -102,10 +102,61 @@ type NostrSubscriptionStore = {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   // Initial state
-  notes: {},
+  notes: {
+    "note1": {
+      id: "note1",
+      title: "My First Note",
+      content: "<p>This is the <strong>content</strong> of my first note.</p>",
+      tags: ["#test", "#example"],
+      values: {},
+      fields: {},
+      status: "draft",
+      createdAt: new Date("2023-01-01T10:00:00Z"),
+      updatedAt: new Date("2023-01-01T10:00:00Z"),
+    },
+    "note2": {
+      id: "note2",
+      title: "Another Note",
+      content: "<p>Here's another note about <em>Web Components</em>.</p>",
+      tags: ["#webcomponents", "#ui"],
+      values: {},
+      fields: {},
+      status: "published",
+      createdAt: new Date("2023-01-05T11:30:00Z"),
+      updatedAt: new Date("2023-01-05T11:30:00Z"),
+    },
+    "note3": {
+      id: "note3",
+      title: "Unfiled Idea",
+      content: "<p>This note is not in any folder.</p>",
+      tags: [],
+      values: {},
+      fields: {},
+      status: "draft",
+      createdAt: new Date("2023-01-10T14:00:00Z"),
+      updatedAt: new Date("2023-01-10T14:00:00Z"),
+    },
+  },
   ontology: { nodes: {}, rootIds: [] },
   userProfile: undefined, // Will be populated during initializeApp or initializeNostr
-  folders: {},
+  folders: {
+    "folder1": {
+      id: "folder1",
+      name: "Projects",
+      noteIds: ["note1"],
+      children: [],
+      createdAt: new Date("2023-01-01T09:00:00Z"),
+      updatedAt: new Date("2023-01-01T09:00:00Z"),
+    },
+    "folder2": {
+      id: "folder2",
+      name: "Ideas",
+      noteIds: ["note2"],
+      children: [],
+      createdAt: new Date("2023-01-03T10:00:00Z"),
+      updatedAt: new Date("2023-01-03T10:00:00Z"),
+    },
+  },
   templates: {},
   
   currentNoteId: undefined,

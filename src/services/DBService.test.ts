@@ -16,6 +16,32 @@ vi.doMock('localforage', () => ({
   },
 }));
 
+const clearMockStoreAndMocks = () => {
+  vi.clearAllMocks();
+  for (const key in mockLocalForageStore) {
+    delete mockLocalForageStore[key];
+  }
+  mockLocalForageInstance.setItem.mockImplementation(async (key, value) => {
+    mockLocalForageStore[key] = value;
+    return value;
+  });
+  mockLocalForageInstance.getItem.mockImplementation(async (key) => mockLocalForageStore[key] || null);
+  mockLocalForageInstance.removeItem.mockImplementation(async (key) => {
+    delete mockLocalForageStore[key];
+  });
+  mockLocalForageInstance.clear.mockImplementation(async () => {
+    for (const key in mockLocalForageStore) {
+      delete mockLocalForageStore[key];
+    }
+  });
+  mockLocalForageInstance.iterate.mockImplementation(async (iterator) => {
+    let i = 0;
+    for (const key in mockLocalForageStore) {
+      iterator(mockLocalForageStore[key], key, i++);
+    }
+  });
+};
+
 // Now, import the modules that use the mocked localforage
 const { DBService } = await import('./db');
 import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, DirectMessage, SyncQueueNoteOp } from '../../shared/types';
@@ -23,31 +49,7 @@ import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, DirectMessa
 describe('DBService', () => {
   beforeEach(() => {
     // Reset mocks and the in-memory store before each test
-    vi.clearAllMocks();
-    for (const key in mockLocalForageStore) {
-      delete mockLocalForageStore[key];
-    }
-
-    // Setup mock implementations for the new test
-    mockLocalForageInstance.setItem.mockImplementation(async (key, value) => {
-      mockLocalForageStore[key] = value;
-      return value;
-    });
-    mockLocalForageInstance.getItem.mockImplementation(async (key) => mockLocalForageStore[key] || null);
-    mockLocalForageInstance.removeItem.mockImplementation(async (key) => {
-      delete mockLocalForageStore[key];
-    });
-    mockLocalForageInstance.clear.mockImplementation(async () => {
-      for (const key in mockLocalForageStore) {
-        delete mockLocalForageStore[key];
-      }
-    });
-    mockLocalForageInstance.iterate.mockImplementation(async (iterator) => {
-      let i = 0;
-      for (const key in mockLocalForageStore) {
-        iterator(mockLocalForageStore[key], key, i++);
-      }
-    });
+    clearMockStoreAndMocks();
   });
 
   describe('Notes Operations', () => {

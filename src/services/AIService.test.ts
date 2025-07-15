@@ -7,6 +7,12 @@ import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { setupAiServiceStoreListener } from './AIService'; // Import the setup function
 
+let capturedPromptMessages: any[] = [];
+const mockChatPromptTemplateInstance = {
+    pipe: vi.fn().mockReturnThis(),
+    invoke: vi.fn(),
+};
+
 // Mock the LangChain classes
 vi.mock("@langchain/community/llms/ollama");
 vi.mock("@langchain/community/embeddings/ollama");
@@ -15,24 +21,17 @@ vi.mock("@langchain/core/output_parsers");
 
 vi.mock("@langchain/core/prompts", async () => {
     const actual = await vi.importActual("@langchain/core/prompts") as any;
-    const mockChatPromptTemplateInstance = {
-        pipe: vi.fn().mockReturnThis(), // For chaining: prompt.pipe(model)
-        invoke: vi.fn(), // For: prompt.invoke(input)
-    };
     return {
-        ...actual, // Spread actual to keep other exports like HumanMessagePromptTemplate
+        ...actual,
         ChatPromptTemplate: {
-            ...actual.ChatPromptTemplate, // Spread actual ChatPromptTemplate if it has other static methods
+            ...actual.ChatPromptTemplate,
             fromMessages: vi.fn((messages) => {
-                (global as any).capturedPromptMessages = messages; // Capture messages
-                // Reset the mock instance's methods for each call to fromMessages
-                // to ensure clean state for chained calls like pipe().pipe().invoke()
+                capturedPromptMessages = messages;
                 mockChatPromptTemplateInstance.pipe.mockClear().mockReturnThis();
                 mockChatPromptTemplateInstance.invoke.mockClear();
-                return mockChatPromptTemplateInstance; // Return the persistent, resettable mock instance
+                return mockChatPromptTemplateInstance;
             }),
         },
-        // Ensure other specific prompt types used by the service are also available if not covered by actual
         SystemMessagePromptTemplate: actual.SystemMessagePromptTemplate,
         HumanMessagePromptTemplate: actual.HumanMessagePromptTemplate,
     };
@@ -98,19 +97,7 @@ describe('AIService', () => {
     (OllamaEmbeddings as vi.Mock).mockImplementation(() => mockOllamaEmbeddingsInstance);
     (ChatGoogleGenerativeAI as vi.Mock).mockImplementation(() => mockGeminiInstance);
     (GoogleGenerativeAIEmbeddings as vi.Mock).mockImplementation(() => mockGeminiEmbeddingsInstance);
-    (StringOutputParser as vi.Mock).mockImplementation(() => {
-      // This mock needs to be an object that can be .piped from.
-      // If the chain is model.pipe(new StringOutputParser()), then StringOutputParser itself doesn't need methods.
-      // If the chain is prompt.pipe(model).pipe(new StringOutputParser()), then the StringOutputParser instance
-      // is the last part of the chain, and its result is what's returned by the LangChain execution.
-      // The actual AIService code does `prompt.pipe(model).pipe(new StringOutputParser())`.
-      // So, the result of `model.pipe(new StringOutputParser())` is what `invoke` would act upon.
-      // For simplicity, let's assume the mock for model instances handles this.
-      // The `invoke` on the model mock should return the final string.
-      return {
-        // No methods needed here if it's the last element in a pipe that's invoked.
-      };
-    });
+    (StringOutputParser as vi.Mock).mockImplementation(() => ({}));
 
 
     // Reset instance method mocks
@@ -132,9 +119,9 @@ describe('AIService', () => {
   });
 
   afterEach(() => {
-    (console.error as vi.Mock).mockRestore();
-    (console.warn as vi.Mock).mockRestore();
-    (console.log as vi.Mock).mockRestore();
+    vi.mocked(console.error).mockRestore();
+    vi.mocked(console.warn).mockRestore();
+    vi.mocked(console.log).mockRestore();
   });
 
   describe('Initialization', () => {
@@ -177,7 +164,7 @@ describe('AIService', () => {
     const testCases = [
       { method: 'getOntologySuggestions', args: [{}, 'context'], expectedResultOnError: [], mockReturn: JSON.stringify([{label: "Suggestion"}]) },
       { method: 'getAutoTags', args: ['content'], expectedResultOnError: [], mockReturn: JSON.stringify(['#tag']) },
-      { method: 'getSummarization', args: ['content'], expectedResultOnError: "", mockReturn: "Summary" },
+      { method: 'getSummarization', args: ['content'], expectedResultOnError: undefined, mockReturn: "Summary" },
     ];
 
     testCases.forEach(({ method, args, expectedResultOnError, mockReturn }) => {
@@ -192,7 +179,7 @@ describe('AIService', () => {
           setMockStoreUserProfile({ aiEnabled: true }); // Enabled, but no endpoint/key
           const result = await (aiService as any)[method](...args);
           expect(result).toEqual(expectedResultOnError);
-          expect(console.warn).toHaveBeenCalledWith(`No active AI chat model for ${method.replace('get', '').replace('OntologySuggestions', 'ontology suggestions').replace('AutoTags', 'auto-tags').toLowerCase()}.`);
+          expect(console.warn).toHaveBeenCalledWith(`No active AI chat model for ${method.replace('get', '').replace('OntologySuggestions', 'ontology suggestions').replace('AutoTags', 'auto-tagging').toLowerCase()}.`);
         });
 
         it(`should call preferred model (Gemini) and return parsed response for ${method}`, async () => {

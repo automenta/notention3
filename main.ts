@@ -1,9 +1,26 @@
-import { Hono } from "hono";
-import { serveStatic } from "hono/deno";
+import './index.css'
+import './web-components/Sidebar.ts';
+import './web-components/Button.ts';
+import './web-components/NoteEditor.ts';
 
-const app = new Hono();
+class App extends HTMLElement {
+  constructor() {
+    super();
+    this.innerHTML = `
+      <div class="flex min-h-screen bg-background">
+        <div class="flex flex-1">
+          <div class="flex-1 flex flex-col md:flex-row">
+            <div class="w-full md:w-80 border-r border-border">
+              <my-sidebar></my-sidebar>
+            </div>
+            <div class="flex-1 flex flex-col">
+              <my-note-editor></my-note-editor>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}
 
-app.use("*", serveStatic({ root: "./dist" }));
-
-// @ts-expect-error - Deno.serve used for deployment
-Deno.serve(app.fetch);
+customElements.define("my-app", App);

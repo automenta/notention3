@@ -22,18 +22,19 @@ export class Sidebar extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
-    this.setupEventListeners();
-
     this.unsubscribe = useAppStore.subscribe(
       (state) => {
         const foldersArray = Object.values(state.folders).sort((a, b) => a.name.localeCompare(b.name));
         this.folders = foldersArray;
         this.activeFolderId = state.searchFilters.folderId;
+        this.activeTab = state.sidebarTab;
         this.render(); // Re-render when store state changes
       },
-      (state) => [state.folders, state.searchFilters.folderId]
+      (state) => [state.folders, state.searchFilters.folderId, state.sidebarTab]
     );
+    
+    this.render();
+    this.setupEventListeners();
     useAppStore.getState().loadFolders();
   }
 
@@ -103,7 +104,7 @@ export class Sidebar extends HTMLElement {
   }
 
   private _handleTabClick(tab: string) {
-    this.activeTab = tab;
+    useAppStore.getState().setSidebarTab(tab as any);
     let path = '/notes';
     if (tab === 'ontology') {
       path = '/ontology';
@@ -117,7 +118,6 @@ export class Sidebar extends HTMLElement {
       bubbles: true,
       composed: true,
     }));
-    this.render(); // Re-render to update active tab style
   }
 
   private async _handleNewNote() {
@@ -141,7 +141,6 @@ export class Sidebar extends HTMLElement {
     if (this.activeTab !== 'notes') {
       this._handleTabClick('notes');
     }
-    this.render(); // Re-render to update active folder style
   }
 
   private async _handleEditFolder(folderId: string, currentName: string) {
@@ -347,7 +346,6 @@ export class Sidebar extends HTMLElement {
             ${this._renderFolderTree(this.folders, undefined)}
             <notention-button class="create-folder-button">Create New Folder</notention-button>
           </div>
-          <notention-notes-list active-folder-id="${this.activeFolderId === undefined ? 'undefined' : this.activeFolderId}"></notention-notes-list>
         </div>
       ` : `
         <div class="content">

@@ -8,13 +8,29 @@ import './Settings';
 import './Route';
 
 export class NotentionApp extends HTMLElement {
+  private router: Router | null = null;
+
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this._handleNavigate = this._handleNavigate.bind(this);
   }
 
   connectedCallback() {
     this.render();
+    this.router = this.shadowRoot?.querySelector('notention-router');
+    this.addEventListener('notention-navigate', this._handleNavigate);
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener('notention-navigate', this._handleNavigate);
+  }
+
+  private _handleNavigate(event: Event) {
+    const customEvent = event as CustomEvent;
+    if (this.router && customEvent.detail.path) {
+      this.router.navigate(customEvent.detail.path);
+    }
   }
 
   render() {
@@ -58,8 +74,6 @@ export class NotentionApp extends HTMLElement {
       <div class="container">
         <notention-sidebar></notention-sidebar>
         <div class="main-content">
-          <h2>Welcome to Notention!</h2>
-          <p>This is your decentralized note-taking and network matching app.</p>
           <notention-router>
             <notention-route path="/notes" component="notention-notes-list"></notention-route>
             <notention-route path="/note" component="notention-note-editor"></notention-route>

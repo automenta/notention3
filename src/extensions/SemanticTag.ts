@@ -1,22 +1,24 @@
-import { Mark, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 
-export interface SemanticTagOptions {
-  HTMLAttributes: Record<string, any>;
-}
-
-export const SemanticTag = Mark.create<SemanticTagOptions>({
+export const SemanticTag = Node.create({
   name: 'semanticTag',
 
-  addOptions() {
-    return {
-      HTMLAttributes: {},
-    };
-  },
+  group: 'inline',
+
+  inline: true,
+
+  atom: true,
 
   addAttributes() {
     return {
       tag: {
         default: null,
+        parseHTML: element => element.getAttribute('data-tag'),
+        renderHTML: attributes => {
+          return {
+            'data-tag': attributes.tag,
+          }
+        },
       },
     };
   },
@@ -24,48 +26,23 @@ export const SemanticTag = Mark.create<SemanticTagOptions>({
   parseHTML() {
     return [
       {
-        tag: 'span[data-semantic-tag]',
-        getAttrs: (element) => {
-          const tag = (element as HTMLElement).getAttribute('data-tag');
-          return tag ? { tag } : false;
-        },
+        tag: 'span[data-tag]',
       },
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return [
-      'span',
-      mergeAttributes(
-        { 
-          'data-semantic-tag': '',
-          'data-tag': HTMLAttributes.tag,
-          'class': 'semantic-tag bg-primary/10 text-primary px-2 py-1 rounded text-sm font-medium',
-        },
-        this.options.HTMLAttributes,
-        HTMLAttributes
-      ),
-      HTMLAttributes.tag || '',
-    ];
+    return ['span', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), `#${HTMLAttributes['data-tag']}`];
   },
 
   addCommands() {
     return {
-      setSemanticTag:
-        (attributes: { tag: string }) =>
-        ({ commands }) => {
-          return commands.setMark(this.name, attributes);
-        },
-      toggleSemanticTag:
-        (attributes: { tag: string }) =>
-        ({ commands }) => {
-          return commands.toggleMark(this.name, attributes);
-        },
+      setSemanticTag: (tag) => ({ commands }) => {
+        return commands.insertContent({
+          type: this.type.name,
+          attrs: { tag },
+        });
+      },
     };
   },
 });
-
-// Helper function to insert semantic tags
-export const insertSemanticTag = (editor: any, tag: string) => {
-  editor.chain().focus().insertContent(`<span data-semantic-tag data-tag="${tag}" class="semantic-tag bg-primary/10 text-primary px-2 py-1 rounded text-sm font-medium">${tag}</span>`).run();
-};

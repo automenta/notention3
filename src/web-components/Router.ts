@@ -10,26 +10,23 @@ export class Router extends HTMLElement {
 
   connectedCallback() {
     window.addEventListener('popstate', this._handleLocationChange);
-    window.addEventListener('notention-navigate', this._handleNavigation as EventListener);
     this._handleLocationChange();
   }
 
   disconnectedCallback() {
     window.removeEventListener('popstate', this._handleLocationChange);
-    window.removeEventListener('notention-navigate', this._handleNavigation as EventListener);
+  }
+
+  public navigate(path: string) {
+    if (path !== this.currentPath) {
+      window.history.pushState({}, '', path);
+      this._handleLocationChange();
+    }
   }
 
   private _handleLocationChange() {
     this.currentPath = window.location.pathname;
     this.render();
-  }
-
-  private _handleNavigation(event: CustomEvent) {
-    const newPath = event.detail.path;
-    if (newPath !== this.currentPath) {
-      window.history.pushState({}, '', newPath);
-      this._handleLocationChange();
-    }
   }
 
   render() {

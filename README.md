@@ -127,7 +127,7 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
 
 ### System Components
 - **Frontend**:
-  - Framework: TypeScript, React.
+  - Framework: TypeScript, Web Components.
   - State Management: Zustand.
   - Components:
     - NoteEditor: Tiptap-based with toolbar/autocomplete.
@@ -181,7 +181,7 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
   ```
 
 ### Architectural Patterns
-- Component-based React for modular UI.
+- Component-based architecture for modular UI.
 - Centralized state with Zustand.
 - Service-oriented logic abstraction.
 - Offline-first with local storage and lazy Nostr syncing.

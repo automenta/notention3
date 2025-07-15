@@ -1,11 +1,11 @@
-import './index.css'
-import './web-components/Sidebar.ts';
-import './web-components/Button.ts';
-import './web-components/NoteEditor.ts';
-import './web-components/Router.ts';
-import './web-components/Route.ts';
-import { NoteService } from './services/NoteService.js';
-import { DBService } from './services/db.js';
+import './src/index.css'
+import './src/web-components/Sidebar.ts';
+import './src/web-components/Button.ts';
+import './src/web-components/NoteEditor.ts';
+import './src/web-components/Router.ts';
+import './src/web-components/Route.ts';
+import { NoteService } from './src/services/NoteService.js';
+import { DBService } from './src/services/db.js';
 
 class App extends HTMLElement {
   private noteEditor: HTMLElement | null = null;

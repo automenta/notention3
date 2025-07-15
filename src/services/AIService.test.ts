@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AIService, aiService } from './AIService'; // Test the singleton instance
 import { useAppStore } from '../store';
 import { Ollama } from "@langchain/community/llms/ollama";
@@ -97,7 +97,10 @@ describe('AIService', () => {
     (OllamaEmbeddings as vi.Mock).mockImplementation(() => mockOllamaEmbeddingsInstance);
     (ChatGoogleGenerativeAI as vi.Mock).mockImplementation(() => mockGeminiInstance);
     (GoogleGenerativeAIEmbeddings as vi.Mock).mockImplementation(() => mockGeminiEmbeddingsInstance);
-    (StringOutputParser as vi.Mock).mockImplementation(() => ({}));
+    (StringOutputParser as vi.Mock).mockImplementation(() => ({
+        pipe: vi.fn().mockReturnThis(),
+        invoke: vi.fn(),
+    }));
 
 
     // Reset instance method mocks
@@ -164,7 +167,7 @@ describe('AIService', () => {
     const testCases = [
       { method: 'getOntologySuggestions', args: [{}, 'context'], expectedResultOnError: [], mockReturn: JSON.stringify([{label: "Suggestion"}]) },
       { method: 'getAutoTags', args: ['content'], expectedResultOnError: [], mockReturn: JSON.stringify(['#tag']) },
-      { method: 'getSummarization', args: ['content'], expectedResultOnError: undefined, mockReturn: "Summary" },
+      { method: 'getSummarization', args: ['content'], expectedResultOnError: '', mockReturn: "Summary" },
     ];
 
     testCases.forEach(({ method, args, expectedResultOnError, mockReturn }) => {

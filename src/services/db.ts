@@ -224,7 +224,7 @@ export class DBService {
     await templatesStore.iterate((template: NotentionTemplate) => {
       templates.push(template);
     });
-    return templates.sort((a, b) => a.name.localeCompare(b.name));
+    return templates.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }
 
   static async deleteTemplate(id: string): Promise<void> {

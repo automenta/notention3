@@ -7,6 +7,18 @@ import { OntologyService } from '../services/ontology';
 import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, SyncQueueNoteOp } from '../../shared/types'; // Added Folder, Template, SyncQueueNoteOp
 import { FolderService } from '../services/FolderService'; // Import FolderService for mocking
 
+let mockNewFolderData: Folder;
+
+mockNewFolderData = {
+  id: 'folder-123',
+  name: "My Test Folder",
+  parentId: undefined,
+  noteIds: [],
+  children: [],
+  createdAt: new Date(),
+  updatedAt: new Date()
+};
+
 // Mock services
 vi.mock('../services/db');
 vi.mock('../services/NoteService');
@@ -19,6 +31,17 @@ vi.mock('dompurify', () => ({
     sanitize: mockSanitize,
   }
 }));
+
+vi.mock('../services/FolderService', () => {
+  return {
+    FolderService: {
+      createFolder: vi.fn().mockResolvedValue(mockNewFolderData),
+      updateFolder: vi.fn(),
+      deleteFolder: vi.fn(),
+      getAllFolders: vi.fn().mockResolvedValue([]),
+    }
+  };
+});
 
 
 const initialNotes: Record<string, Note> = {};
@@ -35,26 +58,6 @@ const initialUserProfile: UserProfile = {
     shareEmbeddingsWithPublicNotes: false, // Added default for new field
   }
 };
-
-vi.mock('../services/FolderService', () => {
-  const mockNewFolderData: Folder = {
-    id: 'folder-123',
-    name: "My Test Folder",
-    parentId: undefined,
-    noteIds: [],
-    children: [],
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
-  return {
-    FolderService: {
-      createFolder: vi.fn().mockResolvedValue(mockNewFolderData),
-      updateFolder: vi.fn(),
-      deleteFolder: vi.fn(),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    }
-  };
-});
 
 describe('App Store', () => {
   const baseInitialState = {

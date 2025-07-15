@@ -26,6 +26,18 @@ class NoteEditor extends HTMLElement {
     this.contentTextarea?.addEventListener('input', () => this.saveNote());
   }
 
+  connectedCallback() {
+    const url = new URL(window.location.href);
+    const noteId = url.searchParams.get('id');
+    if (noteId) {
+      NoteService.getNote(noteId).then(note => {
+        if (note) {
+          this.setNote(note);
+        }
+      });
+    }
+  }
+
   setNote(note: Note) {
     this.currentNote = note;
     if (this.titleInput) {

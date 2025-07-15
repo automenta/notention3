@@ -29,13 +29,7 @@ class NotesList extends HTMLElement {
         const target = event.target as HTMLElement;
         const noteId = target.closest('li')?.dataset.noteId;
         if (noteId) {
-          this.dispatchEvent(
-            new CustomEvent('note-selected', {
-              detail: { noteId },
-              bubbles: true,
-              composed: true,
-            })
-          );
+          window.history.pushState({}, '', `/note?id=${noteId}`);
         }
       });
     }

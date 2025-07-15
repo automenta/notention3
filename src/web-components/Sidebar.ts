@@ -21,11 +21,12 @@ class Sidebar extends HTMLElement {
     const newNoteButton = this.querySelector('#new-note-button');
     if (newNoteButton) {
       newNoteButton.addEventListener('click', async () => {
-        await NoteService.createNote({});
+        const newNote = await NoteService.createNote({});
         const notesList = this.querySelector('my-notes-list');
         if (notesList) {
           (notesList as any).updateNotes();
         }
+        window.history.pushState({}, '', `/note?id=${newNote.id}`);
       });
     }
   }

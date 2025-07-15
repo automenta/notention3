@@ -203,7 +203,7 @@ export class DBService {
     await foldersStore.iterate((folder: Folder) => {
       folders.push(folder);
     });
-    return folders.sort((a, b) => a.name.localeCompare(b.name));
+    return folders.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }
 
   static async deleteFolder(id: string): Promise<void> {

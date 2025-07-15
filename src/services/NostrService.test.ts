@@ -1,57 +1,55 @@
+vi.mock('nostr-tools', async () => {
+  const actual = await vi.importActual('nostr-tools');
+  const mockSubInstance = {
+    on: vi.fn(),
+    unsub: vi.fn(),
+  };
+
+  const mockPoolInstance = {
+    publish: vi.fn(),
+    sub: vi.fn(() => mockSubInstance),
+    list: vi.fn(),
+    get: vi.fn(),
+    close: vi.fn(),
+  };
+  return {
+    ...actual,
+    generateSecretKey: vi.fn(() => new Uint8Array(Array(32).fill(0xaa))),
+    getPublicKey: vi.fn((sk) => `mockPublicKey_for_${sk}`),
+    nip04: {
+      encrypt: vi.fn(async (privkeyHex, pubkeyHex, text) => `encrypted_${text}_by_${privkeyHex}_for_${pubkeyHex}`),
+      decrypt: vi.fn(async (privkeyHex, pubkeyHex, payload) => payload.replace(`encrypted_`, '').replace(/_by_.*_for_.*/, '')),
+    },
+    SimplePool: vi.fn(() => mockPoolInstance),
+    finalizeEvent: vi.fn((unsignedEvent, privateKeyHex) => ({
+      ...unsignedEvent,
+      id: `mockEventId_${unsignedEvent.created_at}_${Math.random()}`,
+      sig: `mockSig_for_${privateKeyHex}`,
+    })),
+  };
+});
+
 import { NostrService, nostrServiceInstance } from './NostrService'; // Assuming nostrServiceInstance is the exported singleton
 import { DBService } from './db';
-import { generatePrivateKey, getPublicKey, nip04, SimplePool } from 'nostr-tools';
-import { Note } from '../../shared/types';
-
-import { NostrService, nostrServiceInstance } from './NostrService';
-import { DBService } from './db';
+import { generatePrivateKey, getPublicKey, nip04, SimplePool, finalizeEvent } from 'nostr-tools';
 import { Note } from '../../shared/types';
 
 // Mock DBService
 vi.mock('./db');
 
-// Centralized Mocks for nostr-tools
-const mockSubInstance = {
-  on: vi.fn(),
-  unsub: vi.fn(),
-};
-
-const mockPoolInstance = {
-  publish: vi.fn(),
-  sub: vi.fn(() => mockSubInstance),
-  list: vi.fn(),
-  get: vi.fn(),
-  close: vi.fn(),
-};
-
-const mockGenerateSecretKey = vi.fn(() => new Uint8Array(Array(32).fill(0xaa)));
-const mockGetPublicKey = vi.fn(() => 'mockPublicKey_for_aa_bytes');
-const mockEncrypt = vi.fn(async (privkeyHex, pubkeyHex, text) => `encrypted_${text}_by_${privkeyHex}_for_${pubkeyHex}`);
-const mockDecrypt = vi.fn(async (privkeyHex, pubkeyHex, payload) => payload.replace(`encrypted_`, '').replace(/_by_.*_for_.*/, ''));
-const mockFinalizeEvent = vi.fn((unsignedEvent, privateKeyHex) => ({
-  ...unsignedEvent,
-  id: `mockEventId_${unsignedEvent.created_at}_${Math.random()}`,
-  sig: `mockSig_for_${privateKeyHex}`,
-}));
-
-vi.mock('nostr-tools', () => ({
-  generateSecretKey: mockGenerateSecretKey,
-  getPublicKey: mockGetPublicKey,
-  nip04: {
-    encrypt: mockEncrypt,
-    decrypt: mockDecrypt,
-  },
-  SimplePool: vi.fn(() => mockPoolInstance),
-  finalizeEvent: mockFinalizeEvent,
-}));
-
 
 describe('NostrService', () => {
   let serviceInstance: NostrService;
+  let mockPoolInstance: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset all mocks before each test
     vi.clearAllMocks();
+
+    const nostrTools = await vi.importActual('nostr-tools');
+    mockPoolInstance = new (vi.mocked(SimplePool))();
+    (nostrTools as any).SimplePool.mockImplementation(() => mockPoolInstance);
+
 
     // Reset the state of the singleton instance by clearing its keys
     nostrServiceInstance.clearKeyPair();
@@ -70,10 +68,10 @@ describe('NostrService', () => {
   describe('Key Management', () => {
     it('should generate a new key pair', () => {
       const keys = serviceInstance.generateNewKeyPair();
-      expect(mockGenerateSecretKey).toHaveBeenCalled();
-      expect(mockGetPublicKey).toHaveBeenCalledWith(new Uint8Array(Array(32).fill(0xaa)));
+      expect(generatePrivateKey).toHaveBeenCalled();
+      expect(getPublicKey).toHaveBeenCalledWith(new Uint8Array(Array(32).fill(0xaa)));
       expect(keys.privateKey).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-      expect(keys.publicKey).toBe('mockPublicKey_for_aa_bytes');
+      expect(keys.publicKey).toBe('mockPublicKey_for_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     });
 
     it('should store a key pair using DBService', async () => {
@@ -173,7 +171,7 @@ describe('NostrService', () => {
       const recipientPkHex = 'recipientPkHex';
       await serviceInstance.publishNote(mockNote, undefined, true, recipientPkHex, undefined);
 
-      expect(mockEncrypt).toHaveBeenCalledWith('mySkHex', recipientPkHex, mockNote.content);
+      expect(nip04.encrypt).toHaveBeenCalledWith('mySkHex', recipientPkHex, mockNote.content);
       expect(mockPoolInstance.publish).toHaveBeenCalledTimes(1);
       const publishedEvent = vi.mocked(mockPoolInstance.publish).mock.calls[0][1];
 
@@ -233,14 +231,18 @@ describe('NostrService', () => {
     beforeEach(async () => {
       await serviceInstance.storeKeyPair('mySkHex', 'myPkHex');
       (serviceInstance as any).defaultRelays = ['wss://default.relay'];
-      vi.mocked(mockSubInstance.on).mockClear();
-      vi.mocked(mockSubInstance.unsub).mockClear();
+      const mockSubInstance = vi.mocked(mockPoolInstance.sub).mock.results[0].value;
+      if (mockSubInstance) {
+        vi.mocked(mockSubInstance.on).mockClear();
+        vi.mocked(mockSubInstance.unsub).mockClear();
+      }
       vi.mocked(mockPoolInstance.sub).mockClear();
     });
 
     it('should subscribe to events using SimplePool', () => {
       serviceInstance.subscribeToEvents(mockFilters, onEventCallback, undefined, 'sub1');
       expect(mockPoolInstance.sub).toHaveBeenCalledWith(['wss://default.relay'], mockFilters, { id: 'sub1' });
+      const mockSubInstance = vi.mocked(mockPoolInstance.sub).mock.results[0].value;
       expect(mockSubInstance.on).toHaveBeenCalledWith('event', expect.any(Function));
       expect(mockSubInstance.on).toHaveBeenCalledWith('eose', expect.any(Function));
     });

@@ -1,4 +1,5 @@
 import './NotesList.ts';
+import { NoteService } from '../services/NoteService.js';
 
 class Sidebar extends HTMLElement {
   constructor() {
@@ -9,13 +10,27 @@ class Sidebar extends HTMLElement {
           <h1 class="text-lg font-semibold">Notention</h1>
         </div>
         <div class="p-4">
-          <my-button variant="outline" class="w-full">New Note</my-button>
+          <my-button variant="outline" class="w-full" id="new-note-button">New Note</my-button>
         </div>
         <div class="flex-1 overflow-y-auto">
           <my-notes-list></my-notes-list>
         </div>
       </div>
     `;
+
+    const newNoteButton = this.querySelector('#new-note-button');
+    if (newNoteButton) {
+      newNoteButton.addEventListener('click', async () => {
+        const newNote = await NoteService.createNote({});
+        this.dispatchEvent(
+          new CustomEvent('note-created', {
+            detail: { noteId: newNote.id },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+    }
   }
 }
 

@@ -7,9 +7,7 @@ import { OntologyService } from '../services/ontology';
 import { Note, OntologyTree, UserProfile, Folder, NotentionTemplate, SyncQueueNoteOp } from '../../shared/types'; // Added Folder, Template, SyncQueueNoteOp
 import { FolderService } from '../services/FolderService'; // Import FolderService for mocking
 
-let mockNewFolderData: Folder;
-
-mockNewFolderData = {
+const mockNewFolderData: Folder = {
   id: 'folder-123',
   name: "My Test Folder",
   parentId: undefined,

@@ -2,8 +2,12 @@ import './index.css'
 import './web-components/Sidebar.ts';
 import './web-components/Button.ts';
 import './web-components/NoteEditor.ts';
+import { NoteService } from './services/NoteService.js';
+import { DBService } from './services/db.js';
 
 class App extends HTMLElement {
+  private noteEditor: HTMLElement | null = null;
+
   constructor() {
     super();
     this.innerHTML = `
@@ -20,6 +24,28 @@ class App extends HTMLElement {
         </div>
       </div>
     `;
+
+    this.init();
+    this.noteEditor = this.querySelector('my-note-editor');
+    this.addEventListener('note-selected', this.handleNoteSelected.bind(this));
+  }
+
+  async handleNoteSelected(event: Event) {
+    const customEvent = event as CustomEvent;
+    const noteId = customEvent.detail.noteId;
+    const note = await NoteService.getNote(noteId);
+    if (note && this.noteEditor) {
+      (this.noteEditor as any).setNote(note);
+    }
+  }
+
+  async init() {
+    // Clear existing notes to avoid duplicates on reload
+    await DBService.clearAllData();
+    // Create some sample notes
+    await NoteService.createNote({ title: 'First Note', content: 'This is the first note.' });
+    await NoteService.createNote({ title: 'Second Note', content: 'This is the second note.' });
+    await NoteService.createNote({ title: 'Third Note', content: 'This is the third note.' });
   }
 }
 

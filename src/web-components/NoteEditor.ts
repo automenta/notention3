@@ -1,63 +1,51 @@
-import { Note } from '../../shared/types';
-import { NoteService } from '../services/NoteService.js';
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import { html, LitElement } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
 
-class NoteEditor extends HTMLElement {
-  private titleInput: HTMLInputElement | null = null;
-  private contentTextarea: HTMLTextAreaElement | null = null;
-  private currentNote: Note | null = null;
+@customElement('notention-note-editor')
+export class NoteEditor extends LitElement {
+  @property({ type: String }) content: string = '';
 
-  constructor() {
-    super();
-    this.innerHTML = `
-      <div class="flex flex-col h-full">
-        <div class="p-4 border-b border-border">
-          <input type="text" placeholder="Note title" class="w-full p-2 border-0 text-lg font-semibold" id="note-title">
-        </div>
-        <div class="flex-1 overflow-y-auto p-4">
-          <textarea placeholder="Write your note here..." class="w-full h-full p-2 border-0 resize-none" id="note-content"></textarea>
-        </div>
-      </div>
-    `;
+  private editor: Editor | undefined;
 
-    this.titleInput = this.querySelector('#note-title');
-    this.contentTextarea = this.querySelector('#note-content');
-
-    this.titleInput?.addEventListener('input', () => this.saveNote());
-    this.contentTextarea?.addEventListener('input', () => this.saveNote());
-  }
-
-  connectedCallback() {
-    const url = new URL(window.location.href);
-    const noteId = url.searchParams.get('id');
-    if (noteId) {
-      NoteService.getNote(noteId).then(note => {
-        if (note) {
-          this.setNote(note);
-        }
+  firstUpdated() {
+    const editorContainer = this.shadowRoot?.querySelector('#editor-content') as HTMLElement;
+    if (editorContainer) {
+      this.editor = new Editor({
+        element: editorContainer,
+        extensions: [
+          StarterKit,
+        ],
+        content: this.content,
+        onUpdate: ({ editor }) => {
+          this.content = editor.getHTML();
+          this.dispatchEvent(new CustomEvent('note-change', { detail: this.content }));
+        },
       });
     }
   }
 
-  setNote(note: Note) {
-    this.currentNote = note;
-    if (this.titleInput) {
-      this.titleInput.value = note.title;
-    }
-    if (this.contentTextarea) {
-      this.contentTextarea.value = note.content;
-    }
+  disconnectedCallback() {
+    this.editor?.destroy();
+    super.disconnectedCallback();
   }
 
-  async saveNote() {
-    if (this.currentNote && this.titleInput && this.contentTextarea) {
-      const updatedNote: Note = {
-        ...this.currentNote,
-        title: this.titleInput.value,
-        content: this.contentTextarea.value,
-      };
-      await NoteService.saveNote(updatedNote);
-    }
+  render() {
+    return html`
+      <style>
+        :host {
+          display: block;
+          border: 1px solid #ccc;
+          padding: 16px;
+          min-height: 200px;
+        }
+        #editor-content {
+          min-height: 150px;
+          outline: none;
+        }
+      </style>
+      <div id="editor-content"></div>
+    `;
   }
 }
-
-customElements.define("my-note-editor", NoteEditor);

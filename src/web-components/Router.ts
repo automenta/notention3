@@ -1,22 +1,47 @@
-class Router extends HTMLElement {
+import { html, LitElement } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+
+@customElement('notention-router')
+export class Router extends LitElement {
+  @property({ type: String }) currentPath: string = window.location.pathname;
+
   constructor() {
     super();
-    this.handleLocationChange();
-    window.addEventListener("popstate", this.handleLocationChange.bind(this));
+    window.addEventListener('popstate', this._handleLocationChange.bind(this));
+    window.addEventListener('notention-navigate', this._handleNavigation.bind(this) as EventListener);
   }
 
-  handleLocationChange() {
-    const path = window.location.pathname;
-    const routes = Array.from(this.querySelectorAll("my-route"));
-    const route = routes.find((r) => path.startsWith(r.getAttribute("path")));
+  connectedCallback() {
+    super.connectedCallback();
+    this._handleLocationChange();
+  }
 
-    if (route) {
-      const component = route.getAttribute("component");
-      if (component) {
-        this.innerHTML = `<${component}></${component}>`;
-      }
+  private _handleLocationChange() {
+    this.currentPath = window.location.pathname;
+    this.requestUpdate();
+  }
+
+  private _handleNavigation(event: CustomEvent) {
+    const newPath = event.detail.path;
+    if (newPath !== this.currentPath) {
+      window.history.pushState({}, '', newPath);
+      this._handleLocationChange();
     }
   }
-}
 
-customElements.define("my-router", Router);
+  render() {
+    const routes = Array.from(this.querySelectorAll('notention-route'));
+    const currentRoute = routes.find(route => {
+      const path = route.getAttribute('path');
+      return path && this.currentPath.startsWith(path);
+    });
+
+    if (currentRoute) {
+      const componentTag = currentRoute.getAttribute('component');
+      if (componentTag) {
+        return html`<${componentTag}></${componentTag}>`;
+      }
+    }
+    return html`<div>404 - Not Found</div>`;
+  }
+}

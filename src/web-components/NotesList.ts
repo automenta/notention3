@@ -1,60 +1,53 @@
-import { NoteService } from '../services/NoteService.js';
-import { Note } from '../../shared/types.js';
+import { html, LitElement } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
 
-class NotesList extends HTMLElement {
-  private notes: Note[] = [];
+@customElement('notention-notes-list')
+export class NotesList extends LitElement {
+  @property({ type: Array }) notes: any[] = []; // Placeholder for notes data
 
-  constructor() {
-    super();
-    this.innerHTML = `
-      <div class="flex flex-col h-full">
-        <div class="p-4 border-b border-border">
-          <input type="text" placeholder="Search notes..." class="w-full p-2 border rounded-md border-border">
-        </div>
-        <div class="flex-1 overflow-y-auto">
-          <ul id="notes-list">
-          </ul>
-        </div>
+  render() {
+    return html`
+      <style>
+        :host {
+          display: block;
+          padding: 16px;
+        }
+        .search-input {
+          width: 100%;
+          padding: 8px;
+          margin-bottom: 16px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+        }
+        .note-item {
+          border: 1px solid #eee;
+          padding: 12px;
+          margin-bottom: 8px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .note-item:hover {
+          background-color: #f9f9f9;
+        }
+        .note-title {
+          font-weight: bold;
+        }
+        .note-date {
+          font-size: 0.8em;
+          color: #666;
+        }
+      </style>
+      <input type="text" class="search-input" placeholder="Search notes...">
+      <div class="notes-container">
+        ${this.notes.length === 0
+          ? html`<p>No notes found.</p>`
+          : this.notes.map(note => html`
+              <div class="note-item">
+                <div class="note-title">${note.title || 'Untitled'}</div>
+                <div class="note-date">${new Date(note.updatedAt).toLocaleDateString()}</div>
+              </div>
+            `)}
       </div>
     `;
   }
-
-  async connectedCallback() {
-    this.notes = await NoteService.getNotes();
-    this.render();
-
-    const notesList = this.querySelector('#notes-list');
-    if (notesList) {
-      notesList.addEventListener('click', (event) => {
-        const target = event.target as HTMLElement;
-        const noteId = target.closest('li')?.dataset.noteId;
-        if (noteId) {
-          window.history.pushState({}, '', `/note?id=${noteId}`);
-        }
-      });
-    }
-  }
-
-  async updateNotes() {
-    this.notes = await NoteService.getNotes();
-    this.render();
-  }
-
-  render() {
-    const notesList = this.querySelector('#notes-list');
-    if (notesList) {
-      notesList.innerHTML = this.notes
-        .map(
-          (note) => `
-            <li class="p-4 border-b border-border" data-note-id="${note.id}">
-              <h2 class="font-semibold">${note.title}</h2>
-              <p class="text-sm text-muted-foreground">${note.content.substring(0, 100)}</p>
-            </li>
-          `
-        )
-        .join('');
-    }
-  }
 }
-
-customElements.define("my-notes-list", NotesList);

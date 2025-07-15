@@ -1,35 +1,6 @@
-import './src/index.css'
-import './src/web-components/Sidebar.ts';
-import './src/web-components/Button.ts';
-import './src/web-components/NoteEditor.ts';
-import './src/web-components/Router.ts';
-import './src/web-components/Route.ts';
-import { NoteService } from './src/services/NoteService.js';
-import { DBService } from './src/services/db.js';
+import './src/index.css';
+import './src/web-components/NotentionApp.ts'; // Import the main app component
 
-class App extends HTMLElement {
-  private noteEditor: HTMLElement | null = null;
-
-  constructor() {
-    super();
-    this.innerHTML = `
-      <div class="flex min-h-screen bg-background">
-        <div class="flex flex-1">
-          <div class="flex-1 flex flex-col md:flex-row">
-            <div class="w-full md:w-80 border-r border-border">
-              <my-sidebar></my-sidebar>
-            </div>
-            <div class="flex-1 flex flex-col">
-              <my-router>
-                <my-route path="/note" component="my-note-editor"></my-route>
-              </my-router>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-  }
-}
-
-customElements.define("my-app", App);
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.innerHTML = '<notention-app></notention-app>';
+});

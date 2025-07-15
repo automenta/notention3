@@ -5,7 +5,6 @@ export class Router extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._handleLocationChange = this._handleLocationChange.bind(this);
-    this._handleNavigation = this._handleNavigation.bind(this);
   }
 
   connectedCallback() {

@@ -31,6 +31,7 @@ interface AppActions {
   logoutFromNostr: () => Promise<void>;
 
   // Folders actions
+  loadFolders: () => Promise<void>;
   createFolder: (name: string, parentId?: string) => Promise<string | undefined>;
   updateFolder: (id: string, updates: Partial<Folder>) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
@@ -1754,5 +1755,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       c.pubkey === pubkey ? { ...c, alias } : c
     );
     await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+  },
+
+  loadFolders: async () => {
+    try {
+      const foldersList = await FolderService.getAllFolders();
+      const foldersMap: { [id: string]: Folder } = {};
+      foldersList.forEach(folder => foldersMap[folder.id] = folder);
+      set({ folders: foldersMap });
+    } catch (error) {
+      console.error("Failed to load folders:", error);
+      (get() as AppStore).setError('notes', `Failed to load folders: ${(error as Error).message}`);
+    }
   },
 }));

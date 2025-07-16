@@ -56,31 +56,36 @@ export class NotentionApp extends HTMLElement {
         .main-content {
           flex: 1;
           padding: 16px;
+          overflow-y: auto;
         }
         notention-sidebar {
           width: 280px;
-          border-left: 1px solid var(--color-border, #eee);
+          flex-shrink: 0;
+          border-right: 1px solid var(--color-border, #eee);
         }
 
         /* Mobile responsiveness */
         @media (max-width: 768px) {
           .container {
-            flex-direction: column;
+            flex-direction: column-reverse;
           }
           notention-sidebar {
             width: 100%;
-            border-left: none;
-            border-bottom: 1px solid var(--color-border, #eee);
+            border-right: none;
+            border-top: 1px solid var(--color-border, #eee);
+          }
+          .main-content {
+            padding-bottom: 0;
           }
         }
       </style>
       <div class="container">
         <notention-sidebar></notention-sidebar>
-        <div class="main-content">
+        <main class="main-content">
           <notention-router>
             ${routes.map(route => `<notention-route path="${route.path}" component="${route.component}"></notention-route>`).join('')}
           </notention-router>
-        </div>
+        </main>
       </div>
     `;
   }

@@ -1,4 +1,5 @@
 import { useAppStore } from '../store';
+import { debounce } from '../lib/utils';
 import { Note, NotentionTemplate } from '../../shared/types';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
@@ -60,7 +61,7 @@ export class NoteEditor extends HTMLElement {
 		this.editor?.destroy();
 	}
 
-	private _handleInput(event: Event) {
+	private _handleInput = debounce((event: Event) => {
 		if (!this.note) return;
 		const target = event.target as
 			| HTMLInputElement
@@ -75,7 +76,7 @@ export class NoteEditor extends HTMLElement {
 			const updatedNote = { ...this.note, [name]: value };
 			useAppStore.getState().updateNote(this.note.id, updatedNote);
 		}
-	}
+	}, 500);
 
 	private updateFolderOptions() {
 		const select = this.shadowRoot?.querySelector(
@@ -121,11 +122,11 @@ export class NoteEditor extends HTMLElement {
 				}),
 			],
 			content: this.note?.content || '',
-			onUpdate: ({ editor }) => {
+			onUpdate: debounce(({ editor }) => {
 				if (!this.note) return;
 				const updatedNote = { ...this.note, content: editor.getHTML() };
 				useAppStore.getState().updateNote(this.note.id, updatedNote);
-			},
+			}, 500),
 		});
 	}
 
@@ -210,8 +211,32 @@ export class NoteEditor extends HTMLElement {
 				const aiService = getAIService();
 				const summary = await aiService.summarize(content);
 				if (summary) {
-					// for now, just append to the note
-					this.editor.chain().focus().insertContent(summary).run();
+					this.modal?.setContent(
+						'Summary',
+						`<p>${summary}</p><br><button class="insert-summary">Insert</button>`,
+						() => {}
+					);
+					this.shadowRoot
+						?.querySelector('.insert-summary')
+						?.addEventListener('click', () => {
+							this.editor?.chain().focus().insertContent(summary).run();
+							this.modal?.close();
+						});
+				}
+			});
+
+		this.shadowRoot
+			?.querySelector('.delete-note-button')
+			?.addEventListener('click', () => {
+				if (this.note && confirm('Are you sure you want to delete this note?')) {
+					useAppStore.getState().deleteNote(this.note.id);
+					this.dispatchEvent(
+						new CustomEvent('notention-navigate', {
+							detail: { path: '/' },
+							bubbles: true,
+							composed: true,
+						})
+					);
 				}
 			});
 	}

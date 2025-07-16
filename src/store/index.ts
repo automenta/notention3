@@ -2292,40 +2292,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 		}
 	},
 
-	moveOntologyNode: (nodeId, newParentId, newIndex) => {
-		const { ontology } = get();
+	moveOntologyNode: (
+		nodeId: string,
+		newParentId: string | undefined,
+		newIndex: number
+	) => {
+		const { ontology, setOntology } = get();
 		if (!ontology) return;
 
-		const newOntology = { ...ontology };
-		const node = newOntology.nodes[nodeId];
-		if (!node) return;
+		const newOntology = OntologyService.moveNode(
+			ontology,
+			nodeId,
+			newParentId,
+			newIndex
+		);
 
-		// Remove from old parent
-		const oldParentId = node.parentId;
-		if (oldParentId) {
-			const oldParent = newOntology.nodes[oldParentId];
-			if (oldParent) {
-				oldParent.children = oldParent.children?.filter(id => id !== nodeId);
-			}
-		} else {
-			newOntology.rootIds = newOntology.rootIds.filter(id => id !== nodeId);
-		}
-
-		// Add to new parent
-		node.parentId = newParentId;
-		if (newParentId) {
-			const newParent = newOntology.nodes[newParentId];
-			if (newParent) {
-				if (!newParent.children) {
-					newParent.children = [];
-				}
-				newParent.children.splice(newIndex, 0, nodeId);
-			}
-		} else {
-			newOntology.rootIds.splice(newIndex, 0, nodeId);
-		}
-
-		set({ ontology: newOntology });
+		// setOntology will update the state and persist to DB
+		setOntology(newOntology);
 	},
 
 	updateUserProfile: async (profileUpdates: Partial<UserProfile>) => {

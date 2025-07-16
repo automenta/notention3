@@ -45,8 +45,10 @@ export class OntologyService {
 		}
 
 		return {
+			...ontology,
 			nodes: updatedNodes,
 			rootIds: updatedRootIds,
+			updatedAt: new Date(),
 		};
 	}
 

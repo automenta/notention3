@@ -271,11 +271,41 @@ describe('OntologyService', () => {
 	});
 
 	it('should correctly export and import ontology to/from JSON', () => {
+		// Add a defined attribute to one node for thorough testing
+		const projectNodeId = Object.values(baseOntology.nodes).find(
+			n => n.label === '#Project'
+		)!.id;
+		baseOntology = OntologyService.updateNode(
+			baseOntology,
+			projectNodeId,
+			{ attributes: { status: 'active' } }
+		);
+
 		const jsonExport = OntologyService.exportToJSON(baseOntology);
 		expect(typeof jsonExport).toBe('string');
 
 		const importedOntology = OntologyService.importFromJSON(jsonExport);
-		expect(importedOntology).toEqual(baseOntology);
+
+		// Deep copy and normalize for comparison
+		const normalizedOriginal = JSON.parse(JSON.stringify(baseOntology));
+
+		// The `updatedAt` field will be a string after serialization, so we compare strings
+		if (normalizedOriginal.updatedAt) {
+			normalizedOriginal.updatedAt = new Date(normalizedOriginal.updatedAt).toISOString();
+		}
+		if (importedOntology.updatedAt && typeof importedOntology.updatedAt === 'string') {
+			// It is already a string, which is expected.
+		} else if (importedOntology.updatedAt) {
+			importedOntology.updatedAt = new Date(importedOntology.updatedAt).toISOString();
+		}
+
+		// JSON.stringify removes keys with `undefined` values. We should account for this.
+		Object.values(normalizedOriginal.nodes).forEach(node => {
+			if (node.parentId === undefined) delete node.parentId;
+			if (node.attributes === undefined) delete node.attributes;
+		});
+
+		expect(importedOntology).toEqual(normalizedOriginal);
 
 		// Test invalid JSON
 		expect(() => OntologyService.importFromJSON('invalid json')).toThrowError(

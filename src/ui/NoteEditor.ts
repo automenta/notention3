@@ -1,5 +1,5 @@
 import { useAppStore } from '../store';
-import { Note } from '../../shared/types';
+import { Note, NotentionTemplate } from '../../shared/types';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { SemanticTag } from '../extensions/SemanticTag';
@@ -15,6 +15,7 @@ export class NoteEditor extends HTMLElement {
 	private note: Note | null = null;
 	private editor: Editor | null = null;
 	private folders: Folder[] = [];
+	private templates: NotentionTemplate[] = [];
 	private modal: Modal | null = null;
 	private unsubscribe: () => void = () => {};
 	private aiEnabled = false;
@@ -33,10 +34,12 @@ export class NoteEditor extends HTMLElement {
 			if (newNote?.id !== this.note?.id) {
 				this.note = newNote;
 				this.folders = Object.values(state.folders);
+				this.templates = Object.values(state.templates);
 				this.aiEnabled = state.userProfile?.preferences.aiEnabled ?? false;
 				this.render();
 			} else {
 				this.folders = Object.values(state.folders);
+				this.templates = Object.values(state.templates);
 				this.aiEnabled = state.userProfile?.preferences.aiEnabled ?? false;
 				this.updateFolderOptions();
 				this.updateToolbarVisibility();
@@ -46,6 +49,7 @@ export class NoteEditor extends HTMLElement {
 		const initialState = useAppStore.getState();
 		this.note = noteId ? initialState.notes[noteId] : null;
 		this.folders = Object.values(initialState.folders);
+		this.templates = Object.values(initialState.templates);
 		this.aiEnabled =
 			initialState.userProfile?.preferences.aiEnabled ?? false;
 		this.render();
@@ -151,7 +155,7 @@ export class NoteEditor extends HTMLElement {
 			?.addEventListener('click', () => {
 				this.modal?.setContent('Add Tag', 'Tag', tag => {
 					if (tag) {
-						this.editor?.chain().focus().setSemanticTag(tag).run();
+						this.editor?.chain().focus().insertContent(`#${tag}`).run();
 					}
 				});
 			});
@@ -171,40 +175,29 @@ export class NoteEditor extends HTMLElement {
 					});
 				});
 			});
-		this.shadowRoot
-			?.querySelector('.template-button')
-			?.addEventListener('click', () => {
-				// For templates, a dropdown or a more complex modal would be better.
-				// For now, we'll keep the prompt to avoid overcomplicating this step.
-				const template = prompt(
-					'Select a template:\n1. Meeting Note\n2. Todo List'
-				);
-				if (template === '1') {
-					this.editor
-						?.chain()
-						.focus()
-						.insertContent(
-							'<h2>Meeting Note</h2><p><strong>Date:</strong></p><p><strong>Attendees:</strong></p><p><strong>Agenda:</strong></p><p><strong>Notes:</strong></p>'
-						)
-						.run();
-				} else if (template === '2') {
-					this.editor
-						?.chain()
-						.focus()
-						.insertContent('<h2>Todo List</h2><ul><li><p></p></li></ul>')
-						.run();
-				}
-			});
+
+		const templateSelect = this.shadowRoot?.querySelector(
+			'.template-select'
+		) as HTMLSelectElement;
+		templateSelect?.addEventListener('change', () => {
+			const templateId = templateSelect.value;
+			const template = this.templates.find(t => t.id === templateId);
+			if (template) {
+				this.editor?.chain().focus().insertContent(template.content).run();
+				templateSelect.value = '';
+			}
+		});
 
 		this.shadowRoot
 			?.querySelector('.autotag-button')
 			?.addEventListener('click', async () => {
 				if (!this.note || !this.editor) return;
 				const content = this.editor.getText();
-				const { autoTag } = useAppStore.getState().getAIService();
-				const tags = await autoTag(content);
+				const { getAIService } = useAppStore.getState();
+				const aiService = getAIService();
+				const tags = await aiService.autoTag(content);
 				if (tags) {
-					this.editor.chain().focus().setSemanticTag(tags.join(' ')).run();
+					this.editor.chain().focus().insertContent(tags.join(' ')).run();
 				}
 			});
 
@@ -213,8 +206,9 @@ export class NoteEditor extends HTMLElement {
 			?.addEventListener('click', async () => {
 				if (!this.note || !this.editor) return;
 				const content = this.editor.getHTML();
-				const { summarize } = useAppStore.getState().getAIService();
-				const summary = await summarize(content);
+				const { getAIService } = useAppStore.getState();
+				const aiService = getAIService();
+				const summary = await aiService.summarize(content);
 				if (summary) {
 					// for now, just append to the note
 					this.editor.chain().focus().insertContent(summary).run();
@@ -271,6 +265,7 @@ export class NoteEditor extends HTMLElement {
         gap: 8px;
         padding: 8px;
         border-bottom: 1px solid var(--color-border);
+        align-items: center;
       }
       .toolbar button {
         padding: 4px 8px;
@@ -278,6 +273,12 @@ export class NoteEditor extends HTMLElement {
         border-radius: 4px;
         background-color: #fff;
         cursor: pointer;
+      }
+      .template-select {
+        padding: 4px 8px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        background-color: #fff;
       }
       .content-editor {
         border: 1px solid var(--color-border);
@@ -337,7 +338,16 @@ export class NoteEditor extends HTMLElement {
           <button class="ordered-list-button">Ordered List</button>
           <button class="tag-button">Add Tag</button>
           <button class="key-value-button">Add Key-Value</button>
-          <button class="template-button">Apply Template</button>
+          <select class="template-select">
+            <option value="" disabled selected>Apply Template</option>
+            ${this.templates
+							.map(
+								template => `
+              <option value="${template.id}">${template.name}</option>
+            `
+							)
+							.join('')}
+          </select>
           <button class="autotag-button" style="display: none;">Auto-tag</button>
           <button class="summarize-button" style="display: none;">Summarize</button>
         </div>

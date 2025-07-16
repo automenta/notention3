@@ -7,6 +7,7 @@ export class OntologyEditor extends HTMLElement {
 	private unsubscribe: () => void = () => {};
 	private sortable: Sortable | null = null;
 	private selectedNodeId: string | null = null;
+	private contextMenu: { x: number; y: number; nodeId: string } | null = null;
 
 	constructor() {
 		super();
@@ -23,17 +24,18 @@ export class OntologyEditor extends HTMLElement {
 			state => [state.ontology]
 		);
 		this.render();
+		document.addEventListener('click', () => this._closeContextMenu());
 	}
 
 	disconnectedCallback() {
 		this.unsubscribe();
 		this.sortable?.destroy();
+		document.removeEventListener('click', () => this._closeContextMenu());
 	}
 
 	private _initSortable() {
-		const tree = this.shadowRoot?.querySelector('.ontology-tree');
-		if (tree) {
-			this.sortable = Sortable.create(tree as HTMLElement, {
+		this.shadowRoot?.querySelectorAll('.ontology-tree').forEach(tree => {
+			Sortable.create(tree as HTMLElement, {
 				group: 'ontology',
 				animation: 150,
 				onEnd: evt => {
@@ -47,16 +49,17 @@ export class OntologyEditor extends HTMLElement {
 					}
 				},
 			});
-		}
+		});
 	}
 
-	private _handleAddNode() {
+	private _handleAddNode(parentId?: string) {
 		const label = prompt('Enter new node label:');
 		if (!label) return;
 		const newNode: OntologyNode = {
 			id: Date.now().toString(),
 			label,
 			children: [],
+			parentId,
 		};
 		const newOntology = {
 			...this.ontology!,
@@ -64,14 +67,88 @@ export class OntologyEditor extends HTMLElement {
 				...this.ontology!.nodes,
 				[newNode.id]: newNode,
 			},
-			rootIds: [...this.ontology!.rootIds, newNode.id],
+			rootIds: parentId
+				? this.ontology!.rootIds
+				: [...this.ontology!.rootIds, newNode.id],
 		};
+		if (parentId) {
+			const parent = newOntology.nodes[parentId];
+			if (parent) {
+				parent.children = [...(parent.children || []), newNode.id];
+			}
+		}
+		useAppStore.getState().setOntology(newOntology);
+	}
+
+	private _handleEditNode(nodeId: string) {
+		const node = this.ontology?.nodes[nodeId];
+		if (!node) return;
+		const newLabel = prompt('Enter new label:', node.label);
+		if (newLabel) {
+			const newNode = { ...node, label: newLabel };
+			const newOntology = {
+				...this.ontology!,
+				nodes: {
+					...this.ontology!.nodes,
+					[nodeId]: newNode,
+				},
+			};
+			useAppStore.getState().setOntology(newOntology);
+		}
+	}
+
+	private _handleDeleteNode(nodeId: string) {
+		if (!this.ontology) return;
+		const newOntology = { ...this.ontology };
+		delete newOntology.nodes[nodeId];
+		newOntology.rootIds = newOntology.rootIds.filter(id => id !== nodeId);
+		Object.values(newOntology.nodes).forEach(node => {
+			node.children = node.children?.filter(id => id !== nodeId);
+		});
 		useAppStore.getState().setOntology(newOntology);
 	}
 
 	private _handleNodeClick(nodeId: string) {
 		this.selectedNodeId = nodeId;
 		this.render();
+	}
+
+	private _handleNodeContextMenu(event: MouseEvent, nodeId: string) {
+		event.preventDefault();
+		this.contextMenu = { x: event.clientX, y: event.clientY, nodeId };
+		this.render();
+	}
+
+	private _closeContextMenu() {
+		if (this.contextMenu) {
+			this.contextMenu = null;
+			this.render();
+		}
+	}
+
+	private async _handleAiSuggest() {
+		const { getAIService, ontology, setOntology } = useAppStore.getState();
+		const aiService = getAIService();
+		const suggestions = await aiService.suggestOntology(
+			JSON.stringify(ontology)
+		);
+		if (suggestions) {
+			// for now, just add the suggestions as root nodes
+			const newNodes = suggestions.map(label => ({
+				id: Date.now().toString() + Math.random(),
+				label,
+				children: [],
+			}));
+			const newOntology = {
+				...ontology,
+				nodes: {
+					...ontology.nodes,
+					...newNodes.reduce((acc, node) => ({ ...acc, [node.id]: node }), {}),
+				},
+				rootIds: [...ontology.rootIds, ...newNodes.map(n => n.id)],
+			};
+			setOntology(newOntology);
+		}
 	}
 
 	private _handleAttributeChange(nodeId: string, key: string, value: string) {
@@ -114,7 +191,9 @@ export class OntologyEditor extends HTMLElement {
 				.filter(Boolean) || [];
 		return `
       <li class="ontology-node ${this.selectedNodeId === node.id ? 'selected' : ''}" data-node-id="${node.id}">
-        <span class="node-label">${node.label}</span>
+        <div class="node-content">
+          <span class="node-label">${node.label}</span>
+        </div>
         ${
 					children.length > 0
 						? `
@@ -156,6 +235,18 @@ export class OntologyEditor extends HTMLElement {
     `;
 	}
 
+	private _renderContextMenu() {
+		if (!this.contextMenu) return '';
+		const { x, y, nodeId } = this.contextMenu;
+		return `
+      <div class="context-menu" style="top: ${y}px; left: ${x}px;">
+        <button class="context-menu-button edit-node" data-node-id="${nodeId}">Edit</button>
+        <button class="context-menu-button delete-node" data-node-id="${nodeId}">Delete</button>
+        <button class="context-menu-button add-child-node" data-node-id="${nodeId}">Add Child</button>
+      </div>
+    `;
+	}
+
 	render() {
 		if (!this.shadowRoot) return;
 
@@ -173,20 +264,21 @@ export class OntologyEditor extends HTMLElement {
         padding: 4px;
         cursor: grab;
       }
-      .ontology-node.selected > .node-label {
+      .ontology-node.selected > .node-content > .node-label {
         font-weight: bold;
         background-color: #eee;
       }
       .node-label {
         cursor: pointer;
       }
-      .add-node-button {
+      .add-node-button, .ai-suggest-button {
         padding: 8px 12px;
         background-color: var(--color-primary);
         color: var(--color-primary-foreground);
         border: none;
         border-radius: 4px;
         cursor: pointer;
+        width: fit-content;
       }
       .attribute-editor {
         margin-top: 20px;
@@ -197,6 +289,26 @@ export class OntologyEditor extends HTMLElement {
         display: flex;
         gap: 8px;
         margin-bottom: 8px;
+      }
+      .context-menu {
+        position: absolute;
+        background: white;
+        border: 1px solid #ccc;
+        padding: 8px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .context-menu-button {
+        background: none;
+        border: none;
+        text-align: left;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .context-menu-button:hover {
+        background: #eee;
       }
     `;
 
@@ -210,21 +322,35 @@ export class OntologyEditor extends HTMLElement {
       <div class="ontology-editor">
         <h2>Ontology</h2>
         <button class="add-node-button">Add Root Node</button>
+        <button class="ai-suggest-button">AI Suggest</button>
         <ul class="ontology-tree">
           ${this.ontology.rootIds.map(rootId => this._renderNode(this.ontology!.nodes[rootId])).join('')}
         </ul>
         ${this._renderAttributeEditor()}
+        ${this._renderContextMenu()}
       </div>
     `;
 
 		this.shadowRoot
 			.querySelector('.add-node-button')
-			?.addEventListener('click', this._handleAddNode.bind(this));
-		this.shadowRoot.querySelectorAll('.node-label').forEach(label => {
-			label.addEventListener('click', () => {
-				const nodeId = (label.parentElement as HTMLElement).dataset.nodeId;
+			?.addEventListener('click', () => this._handleAddNode());
+		this.shadowRoot
+			.querySelector('.ai-suggest-button')
+			?.addEventListener('click', this._handleAiSuggest.bind(this));
+		this.shadowRoot.querySelectorAll('.ontology-node').forEach(node => {
+			node.addEventListener('click', e => {
+				e.stopPropagation();
+				const nodeId = (node as HTMLElement).dataset.nodeId;
 				if (nodeId) {
 					this._handleNodeClick(nodeId);
+				}
+			});
+			node.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				e.stopPropagation();
+				const nodeId = (node as HTMLElement).dataset.nodeId;
+				if (nodeId) {
+					this._handleNodeContextMenu(e as MouseEvent, nodeId);
 				}
 			});
 		});
@@ -267,6 +393,26 @@ export class OntologyEditor extends HTMLElement {
 						this._handleAttributeChange(this.selectedNodeId, key, value);
 					}
 				}
+			});
+
+		this.shadowRoot.querySelector('.edit-node')?.addEventListener('click', e => {
+			const nodeId = (e.target as HTMLElement).dataset.nodeId;
+			if (nodeId) this._handleEditNode(nodeId);
+			this._closeContextMenu();
+		});
+		this.shadowRoot
+			.querySelector('.delete-node')
+			?.addEventListener('click', e => {
+				const nodeId = (e.target as HTMLElement).dataset.nodeId;
+				if (nodeId) this._handleDeleteNode(nodeId);
+				this._closeContextMenu();
+			});
+		this.shadowRoot
+			.querySelector('.add-child-node')
+			?.addEventListener('click', e => {
+				const nodeId = (e.target as HTMLElement).dataset.nodeId;
+				if (nodeId) this._handleAddNode(nodeId);
+				this._closeContextMenu();
 			});
 
 		this._initSortable();

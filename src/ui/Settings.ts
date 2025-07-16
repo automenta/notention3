@@ -27,14 +27,28 @@ export class Settings extends HTMLElement {
 		this.unsubscribe();
 	}
 
-	private _handleGenerateKeys() {
-		useAppStore.getState().generateAndStoreNostrKeys();
+	private async _handleGenerateKeys() {
+		const { privateKey } = await useAppStore
+			.getState()
+			.generateAndStoreNostrKeys();
+		if (privateKey) {
+			alert(`Your new private key is: ${privateKey}`);
+		}
 	}
 
 	private _handleImportKey() {
 		const privateKey = prompt('Enter your Nostr private key:');
 		if (privateKey) {
 			useAppStore.getState().generateAndStoreNostrKeys(privateKey);
+		}
+	}
+
+	private _handleExportKey() {
+		const privateKey = useAppStore.getState().userProfile?.nostrPrivkey;
+		if (privateKey) {
+			alert(`Your private key is: ${privateKey}`);
+		} else {
+			alert('No private key to export.');
 		}
 	}
 
@@ -86,6 +100,15 @@ export class Settings extends HTMLElement {
 		document.body.setAttribute('data-theme', theme);
 	}
 
+	private _toggleApiKeyVisibility() {
+		const input = this.shadowRoot?.querySelector(
+			'#geminiApiKey'
+		) as HTMLInputElement;
+		if (input) {
+			input.type = input.type === 'password' ? 'text' : 'password';
+		}
+	}
+
 	render() {
 		if (!this.shadowRoot) return;
 
@@ -118,6 +141,11 @@ export class Settings extends HTMLElement {
         align-items: center;
         padding: 4px 0;
       }
+      .api-key-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
     `;
 
 		this.shadowRoot.innerHTML = `
@@ -137,6 +165,7 @@ export class Settings extends HTMLElement {
           <p>Public Key: ${this.userProfile?.nostrPubkey || 'Not set'}</p>
           <button class="generate-button button">Generate New Keys</button>
           <button class="import-button button">Import Private Key</button>
+          <button class="export-button button">Export Private Key</button>
           <button class="clear-button button">Clear Keys</button>
         </div>
         <div class="relay-management">
@@ -170,7 +199,10 @@ export class Settings extends HTMLElement {
           </div>
           <div>
             <label for="geminiApiKey">Google Gemini API Key</label>
-            <input type="password" id="geminiApiKey" name="geminiApiKey" value="${this.userProfile?.preferences?.geminiApiKey || ''}">
+            <div class="api-key-container">
+              <input type="password" id="geminiApiKey" name="geminiApiKey" value="${this.userProfile?.preferences?.geminiApiKey || ''}">
+              <button class="show-api-key-button">Show</button>
+            </div>
           </div>
         </div>
       </div>
@@ -182,6 +214,9 @@ export class Settings extends HTMLElement {
 		this.shadowRoot
 			.querySelector('.import-button')
 			?.addEventListener('click', this._handleImportKey.bind(this));
+		this.shadowRoot
+			.querySelector('.export-button')
+			?.addEventListener('click', this._handleExportKey.bind(this));
 		this.shadowRoot
 			.querySelector('.clear-button')
 			?.addEventListener('click', this._handleClearKeys.bind(this));
@@ -202,6 +237,9 @@ export class Settings extends HTMLElement {
 		this.shadowRoot
 			.querySelector('.theme-select')
 			?.addEventListener('change', this._handleThemeChange.bind(this));
+		this.shadowRoot
+			.querySelector('.show-api-key-button')
+			?.addEventListener('click', this._toggleApiKeyVisibility.bind(this));
 	}
 }
 

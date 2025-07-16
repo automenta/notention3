@@ -6,10 +6,6 @@ export class NotesList extends HTMLElement {
   private activeFolderId: string | undefined = undefined;
   private unsubscribe: () => void = () => {};
 
-  static get observedAttributes() {
-    return ['active-folder-id'];
-  }
-
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
@@ -18,9 +14,10 @@ export class NotesList extends HTMLElement {
   connectedCallback() {
     this.unsubscribe = useAppStore.subscribe(
       (state) => {
+        this.activeFolderId = state.searchFilters.folderId;
         const allNotes = Object.values(state.notes);
         this.notes = allNotes.filter(note => {
-          if (this.activeFolderId === 'undefined') {
+          if (this.activeFolderId === undefined) {
             return !note.folderId;
           }
           return note.folderId === this.activeFolderId;
@@ -29,25 +26,22 @@ export class NotesList extends HTMLElement {
       },
       (state) => [state.notes, state.searchFilters.folderId]
     );
+
+    // Initial load
+    const state = useAppStore.getState();
+    this.activeFolderId = state.searchFilters.folderId;
+    const allNotes = Object.values(state.notes);
+    this.notes = allNotes.filter(note => {
+      if (this.activeFolderId === undefined) {
+        return !note.folderId;
+      }
+      return note.folderId === this.activeFolderId;
+    });
     this.render();
   }
 
   disconnectedCallback() {
     this.unsubscribe();
-  }
-
-  attributeChangedCallback(name: string, oldValue: string, newValue: string) {
-    if (name === 'active-folder-id') {
-      this.activeFolderId = newValue === 'undefined' ? undefined : newValue;
-      const allNotes = Object.values(useAppStore.getState().notes);
-      this.notes = allNotes.filter(note => {
-        if (this.activeFolderId === undefined) {
-          return !note.folderId;
-        }
-        return note.folderId === this.activeFolderId;
-      });
-      this.render();
-    }
   }
 
   private _handleNoteClick(noteId: string) {

@@ -7,9 +7,12 @@ import Mention from '@tiptap/extension-mention';
 import { suggestion } from '../lib/suggestion';
 import tippy from 'tippy.js';
 
+import { Folder } from '../../shared/types';
+
 export class NoteEditor extends HTMLElement {
   private note: Note | null = null;
   private editor: Editor | null = null;
+  private folders: Folder[] = [];
   private unsubscribe: () => void = () => {};
 
   constructor() {
@@ -23,9 +26,10 @@ export class NoteEditor extends HTMLElement {
         const params = new URLSearchParams(window.location.search);
         const noteId = params.get('id');
         this.note = noteId ? state.notes[noteId] : null;
+        this.folders = Object.values(state.folders);
         this.render();
       },
-      (state) => [state.notes, state.currentNoteId]
+      (state) => [state.notes, state.currentNoteId, state.folders]
     );
     this.render();
   }
@@ -37,7 +41,7 @@ export class NoteEditor extends HTMLElement {
 
   private _handleInput(event: Event) {
     if (!this.note) return;
-    const target = event.target as HTMLInputElement | HTMLTextAreaElement;
+    const target = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
     const { name, value } = target;
     const updatedNote = { ...this.note, [name]: value };
     useAppStore.getState().updateNote(this.note.id, updatedNote);
@@ -106,12 +110,24 @@ export class NoteEditor extends HTMLElement {
         flex-direction: column;
         gap: 16px;
       }
+      .note-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
       .title-input {
+        flex-grow: 1;
         font-size: 2em;
         font-weight: bold;
         border: none;
         padding: 8px;
         border-bottom: 1px solid var(--color-border);
+      }
+      .folder-select {
+        padding: 8px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-border);
+        background-color: var(--color-input);
       }
       .toolbar {
         display: flex;
@@ -162,7 +178,17 @@ export class NoteEditor extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="editor-container">
-        <input type="text" name="title" class="title-input" value="${this.note.title}" placeholder="Note Title">
+        <div class="note-header">
+          <input type="text" name="title" class="title-input" value="${this.note.title}" placeholder="Note Title">
+          <select name="folderId" class="folder-select">
+            <option value="">Unfiled</option>
+            ${this.folders.map(folder => `
+              <option value="${folder.id}" ${this.note?.folderId === folder.id ? 'selected' : ''}>
+                ${folder.name}
+              </option>
+            `).join('')}
+          </select>
+        </div>
         <div class="toolbar">
           <button class="bold-button">Bold</button>
           <button class="italic-button">Italic</button>
@@ -177,6 +203,7 @@ export class NoteEditor extends HTMLElement {
     `;
 
     this.shadowRoot.querySelector('.title-input')?.addEventListener('input', this._handleInput.bind(this));
+    this.shadowRoot.querySelector('.folder-select')?.addEventListener('change', this._handleInput.bind(this));
     this._initTiptap();
     this._setupToolbar();
   }

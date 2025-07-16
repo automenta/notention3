@@ -10,5 +10,6 @@ import "./Router.ts";
 import "./Sidebar.ts";
 import "./ChatPanel.ts";
 import "./ContactList.ts";
+import "./AccountWizard.ts";
 
 console.log("Web components loaded.");

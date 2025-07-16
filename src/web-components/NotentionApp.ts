@@ -1,5 +1,7 @@
+import { useAppStore } from '../store';
 import { Router } from './Router';
 import { Sidebar } from './Sidebar';
+import { routes } from './routes';
 import './NoteEditor';
 import './NotesList';
 import './OntologyEditor';
@@ -8,24 +10,43 @@ import './Settings';
 import './Route';
 import './ChatPanel';
 import './ContactList';
+import './UserProfile';
+import './AccountWizard';
 
 export class NotentionApp extends HTMLElement {
   private router: Router | null = null;
+  private showWizard = false;
+  private unsubscribe: () => void = () => {};
 
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
     this._handleNavigate = this._handleNavigate.bind(this);
+    this._handleWizardCompletion = this._handleWizardCompletion.bind(this);
   }
 
   connectedCallback() {
-    this.render();
-    this.router = this.shadowRoot?.querySelector('notention-router');
+    this.unsubscribe = useAppStore.subscribe(
+      (hasProfile) => {
+        this.showWizard = !hasProfile;
+        this.render();
+      },
+      (state) => !!state.userProfile?.nostrPubkey
+    );
+
     this.addEventListener('notention-navigate', this._handleNavigate);
+    this.addEventListener('wizard-completed', this._handleWizardCompletion);
   }
 
   disconnectedCallback() {
+    this.unsubscribe();
     this.removeEventListener('notention-navigate', this._handleNavigate);
+    this.removeEventListener('wizard-completed', this._handleWizardCompletion);
+  }
+
+  private _handleWizardCompletion() {
+    this.showWizard = false;
+    this.render();
   }
 
   private _handleNavigate(event: Event) {
@@ -55,40 +76,50 @@ export class NotentionApp extends HTMLElement {
         .main-content {
           flex: 1;
           padding: 16px;
+          overflow-y: auto;
         }
         notention-sidebar {
           width: 280px;
-          border-left: 1px solid var(--color-border, #eee);
+          flex-shrink: 0;
+          border-right: 1px solid var(--color-border, #eee);
         }
 
         /* Mobile responsiveness */
         @media (max-width: 768px) {
           .container {
-            flex-direction: column;
+            flex-direction: column-reverse;
           }
           notention-sidebar {
             width: 100%;
-            border-left: none;
-            border-bottom: 1px solid var(--color-border, #eee);
+            border-right: none;
+            border-top: 1px solid var(--color-border, #eee);
+          }
+          .main-content {
+            padding-bottom: 0;
           }
         }
       </style>
-      <div class="container">
-        <notention-sidebar></notention-sidebar>
-        <div class="main-content">
-          <notention-router>
-            <notention-route path="/notes" component="notention-notes-list"></notention-route>
-            <notention-route path="/note" component="notention-note-editor"></notention-route>
-            <notention-route path="/ontology" component="notention-ontology-editor"></notention-route>
-            <notention-route path="/network" component="notention-network-panel"></notention-route>
-            <notention-route path="/settings" component="notention-settings"></notention-route>
-            <notention-route path="/contacts" component="notention-contact-list"></notention-route>
-            <notention-route path="/chat" component="notention-chat-panel"></notention-route>
-            <notention-route path="/" component="notention-notes-list"></notention-route> <!-- Default route -->
-          </notention-router>
-        </div>
-      </div>
+      ${
+        this.showWizard
+          ? '<notention-account-wizard></notention-account-wizard>'
+          : `
+            <div class="container">
+              <notention-sidebar></notention-sidebar>
+              <main class="main-content">
+                <notention-router>
+                  ${routes
+                    .map(
+                      (route) =>
+                        `<notention-route path="${route.path}" component="${route.component}"></notention-route>`
+                    )
+                    .join('')}
+                </notention-router>
+              </main>
+            </div>
+          `
+      }
     `;
+    this.router = this.shadowRoot?.querySelector('notention-router');
   }
 }
 

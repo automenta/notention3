@@ -15,6 +15,7 @@ import {
 	Note,
 	NostrUserProfile,
 	RelayDict,
+	Contact,
 } from '../../shared/types'; // Assuming NostrUserProfile and RelayDict might be needed
 import { DBService } from './db';
 
@@ -808,6 +809,102 @@ export class NostrService {
 			return events.sort((a, b) => b.created_at - a.created_at);
 		} catch (error) {
 			console.error('Error fetching own deletion events:', error);
+			return [];
+		}
+	}
+
+	/**
+	 * Fetches the user's contact list (Kind 3 event) from Nostr.
+	 * @param targetRelays Optional relays.
+	 * @returns Promise resolving with an array of Contact objects or null.
+	 */
+	public async fetchContacts(
+		targetRelays?: string[]
+	): Promise<Contact[] | null> {
+		if (!this.isLoggedIn() || !this.publicKey) {
+			throw new Error('User not logged in. Cannot fetch contacts.');
+		}
+
+		const relaysToUse =
+			targetRelays && targetRelays.length > 0
+				? targetRelays
+				: this.defaultRelays;
+		if (relaysToUse.length === 0) return null;
+
+		const filters: Filter[] = [
+			{
+				kinds: [3],
+				authors: [this.publicKey],
+				limit: 1,
+			},
+		];
+
+		const events = await this.pool.list(relaysToUse, filters);
+		if (events.length === 0) return null;
+
+		events.sort((a, b) => b.created_at - a.created_at);
+		const latestEvent = events[0];
+
+		const contacts: Contact[] = latestEvent.tags
+			.filter(tag => tag[0] === 'p')
+			.map(tag => ({
+				pubkey: tag[1],
+				alias: tag[3] || '', // NIP-02 specifies alias can be in the 4th position
+			}));
+
+		return contacts;
+	}
+
+	/**
+	 * Publishes the user's contact list (Kind 3 event) to Nostr.
+	 * @param contacts The array of contacts to publish.
+	 * @param targetRelays Optional relays.
+	 * @returns Promise resolving with event IDs.
+	 */
+	public async publishContactList(
+		contacts: Contact[],
+		targetRelays?: string[]
+	): Promise<string[]> {
+		if (!this.isLoggedIn() || !this.privateKey || !this.publicKey) {
+			throw new Error('User not logged in. Cannot publish contact list.');
+		}
+
+		const tags = contacts.map(contact => {
+			const tag = ['p', contact.pubkey];
+			if (contact.alias) {
+				tag.push(''); // Relay URL, intentionally left blank as per NIP-02
+				tag.push(contact.alias);
+			}
+			return tag;
+		});
+
+		const unsignedEvent: UnsignedEvent = {
+			kind: 3,
+			pubkey: this.publicKey,
+			created_at: Math.floor(Date.now() / 1000),
+			tags,
+			content: '',
+		};
+
+		const signedEvent: Event = finalizeEvent(unsignedEvent, this.privateKey);
+
+		const relaysToPublish =
+			targetRelays && targetRelays.length > 0
+				? targetRelays
+				: this.defaultRelays;
+		if (relaysToPublish.length === 0) {
+			console.warn('No relays for contact list sync.');
+			return [];
+		}
+
+		try {
+			const pubPromises = this.pool.publish(relaysToPublish, signedEvent);
+			const results = await Promise.allSettled(pubPromises);
+			return results
+				.filter(r => r.status === 'fulfilled')
+				.map(() => signedEvent.id);
+		} catch (error) {
+			console.error('Error during contact list pool.publish:', error);
 			return [];
 		}
 	}

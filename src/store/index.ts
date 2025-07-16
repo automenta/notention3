@@ -117,6 +117,7 @@ interface AppActions {
 	addContact: (contact: Contact) => Promise<void>;
 	removeContact: (pubkey: string) => Promise<void>;
 	updateContactAlias: (pubkey: string, alias: string) => Promise<void>;
+	syncContactsWithNostr: () => Promise<void>;
 
 	// Ontology actions
 	moveOntologyNode: (
@@ -298,7 +299,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 						shareTagsWithPublicNotes: true,
 						shareValuesWithPublicNotes: true,
 					},
+					contacts: [],
 				};
+				await DBService.saveUserProfile(userProfileData);
 			} else {
 				if (
 					!userProfileData.nostrRelays ||
@@ -312,6 +315,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 						shareTagsWithPublicNotes: true,
 						shareValuesWithPublicNotes: true,
 					};
+				}
+				if (!userProfileData.contacts) {
+					userProfileData.contacts = [];
 				}
 				relaysToUseInStore = userProfileData.nostrRelays;
 			}
@@ -1717,6 +1723,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			// toast.error("Nostr Sync Error", { description: "User not logged in." });
 			return;
 		}
+		if (!userProfile) {
+			return;
+		}
 
 		setLoading('sync', true);
 		setError('sync', undefined);
@@ -1891,7 +1900,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			// toast.success("Sync Complete", { id: "nostr-sync", description: "Data synced with Nostr relays." });
 			console.log('Sync with Nostr complete.');
 
-			// 5. Fetch and process own Kind 5 deletion events (from other devices)
+			// 5. Fetch and merge contacts (Kind 3)
+			if (userProfile) {
+				const remoteContacts = await nostrService.fetchContacts(relays);
+				if (remoteContacts) {
+					const localContacts = userProfile.contacts || [];
+					// Simple merge: add remote contacts that are not present locally.
+					// A more sophisticated merge could handle updates to aliases, etc.
+					const newContacts = [...localContacts];
+					remoteContacts.forEach(rc => {
+						if (!localContacts.some(lc => lc.pubkey === rc.pubkey)) {
+							newContacts.push(rc);
+						}
+					});
+					if (newContacts.length > localContacts.length) {
+						await get().updateUserProfile({ ...userProfile, contacts: newContacts });
+					}
+				}
+			}
+
+			// 6. Fetch and process own Kind 5 deletion events (from other devices)
 			// Use the same 'since' timestamp as for fetching notes, or slightly earlier to be safe.
 			const remoteDeletionEvents = await nostrService.fetchOwnDeletionEvents(
 				since,
@@ -2213,7 +2241,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 		};
 		const updatedContacts = [...existingContacts, newContact];
 		await updateUserProfile({ ...userProfile, contacts: updatedContacts });
-	}, // Ensured comma
+		get().syncContactsWithNostr();
+	},
 
 	removeContact: async (pubkey: string) => {
 		// Re-affirming this structure
@@ -2224,7 +2253,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			c => c.pubkey !== pubkey
 		);
 		await updateUserProfile({ ...userProfile, contacts: updatedContacts });
-	}, // Ensured comma
+		get().syncContactsWithNostr();
+	},
 
 	updateContactAlias: async (pubkey: string, alias: string) => {
 		// Ensuring this starts correctly
@@ -2235,6 +2265,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			c.pubkey === pubkey ? { ...c, alias } : c
 		);
 		await updateUserProfile({ ...userProfile, contacts: updatedContacts });
+		get().syncContactsWithNostr();
+	},
+
+	syncContactsWithNostr: async () => {
+		const { userProfile, nostrRelays } = get();
+		if (
+			!userProfile ||
+			!userProfile.nostrPubkey ||
+			!nostrService.isLoggedIn()
+		) {
+			return;
+		}
+
+		try {
+			await nostrService.publishContactList(
+				userProfile.contacts || [],
+				nostrRelays
+			);
+		} catch (error) {
+			console.error('Failed to sync contacts with Nostr:', error);
+		}
 	},
 
 	moveOntologyNode: (nodeId, newParentId, newIndex) => {

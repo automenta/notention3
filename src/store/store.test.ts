@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useAppStore } from './index'; // Assuming default export from store/index.ts
 import { DBService } from '../services/db';
-import DOMPurify from 'dompurify';
+import * as DOMPurify from 'dompurify';
 
 // Mock DOMPurify as it's used in syncWithNostr
-const mockSanitize = vi.fn(html => html);
 vi.mock('dompurify', () => ({
 	default: {
-		sanitize: mockSanitize,
+		sanitize: vi.fn(html => html),
 	},
 }));
 import { NoteService } from '../services/NoteService';
@@ -39,14 +38,7 @@ vi.mock('../services/NoteService');
 vi.mock('../services/NostrService');
 vi.mock('../services/ontology');
 
-vi.mock('../services/FolderService', () => ({
-	FolderService: {
-		createFolder: vi.fn(),
-		updateFolder: vi.fn(),
-		deleteFolder: vi.fn(),
-		getAllFolders: vi.fn().mockResolvedValue([]),
-	},
-}));
+vi.mock('../services/FolderService');
 
 const initialNotes: Record<string, Note> = {};
 const initialOntology: OntologyTree = {
@@ -67,7 +59,7 @@ const initialUserProfile: UserProfile = {
 	},
 };
 
-describe.skip('App Store', () => {
+describe('App Store', () => {
 	const baseInitialState = {
 		notes: initialNotes,
 		ontology: initialOntology,
@@ -101,23 +93,11 @@ describe.skip('App Store', () => {
 		// Default mock implementations for services
 		vi.mocked(DBService.getAllNotes).mockResolvedValue([]);
 		vi.mocked(NoteService.getNotes).mockResolvedValue([]);
-		vi.mocked(NoteService.getNotes).mockResolvedValue([]);
-		vi.mocked(FolderService.getAllFolders).mockResolvedValue([]);
-		vi.mocked(DBService.getAllNotes).mockResolvedValue([]);
-		(NoteService.getNotes as vi.Mock).mockResolvedValue([]);
-		(FolderService.getAllFolders as vi.Mock).mockResolvedValue([]);
-		(DBService.getAllTemplates as vi.Mock).mockResolvedValue([]);
-		(DBService.getPendingNoteSyncOps as vi.Mock).mockResolvedValue([]);
-		(NoteService.getNotes as vi.Mock).mockResolvedValue([]);
-		(DBService.getAllNotes as vi.Mock).mockResolvedValue([]);
-		(NoteService.getNotes as vi.Mock).mockResolvedValue([]);
-		(DBService.getAllFolders as vi.Mock).mockResolvedValue([]);
-		(DBService.getAllTemplates as vi.Mock).mockResolvedValue([]);
-		vi.mocked(DBService.getOntology).mockResolvedValue(initialOntology);
-		vi.mocked(DBService.getUserProfile).mockResolvedValue(initialUserProfile);
-		vi.mocked(DBService.getAllFolders).mockResolvedValue([]);
 		vi.mocked(DBService.getAllTemplates).mockResolvedValue([]);
 		vi.mocked(DBService.getPendingNoteSyncOps).mockResolvedValue([]);
+		vi.mocked(DBService.getOntology).mockResolvedValue(initialOntology);
+		vi.mocked(DBService.getUserProfile).mockResolvedValue(initialUserProfile);
+		vi.mocked(FolderService.getAllFolders).mockResolvedValue([]);
 		vi.mocked(DBService.getDefaultOntology).mockResolvedValue(initialOntology);
 		vi.mocked(DBService.getDefaultTemplates).mockResolvedValue([]);
 		vi.mocked(DBService.saveNote).mockResolvedValue(undefined);
@@ -174,7 +154,7 @@ describe.skip('App Store', () => {
 		expect(DBService.getAllNotes).toHaveBeenCalled();
 		expect(DBService.getOntology).toHaveBeenCalled();
 		expect(DBService.getUserProfile).toHaveBeenCalled();
-		expect(DBService.getAllFolders).toHaveBeenCalled();
+		expect(FolderService.getAllFolders).toHaveBeenCalled();
 		expect(DBService.getAllTemplates).toHaveBeenCalled();
 
 		// Check if initializeNostr part ran
@@ -342,7 +322,7 @@ describe.skip('App Store', () => {
 	});
 
 	it('updateUserProfile should update userProfile state and call DBService', async () => {
-		const { updateUserProfile } = useAppStore.getState(); // This is the action
+		const { updateUserProfile } = useAppStore.getState();
 		const profileUpdates: Partial<UserProfile> = {
 			preferences: {
 				...initialUserProfile.preferences,
@@ -355,7 +335,7 @@ describe.skip('App Store', () => {
 		// DBService.saveUserProfile is already mocked to resolve undefined
 		// The action directly calls DBService.saveUserProfile and then set({ userProfile })
 
-		await updateUserProfile(profileUpdates);
+		await useAppStore.getState().updateUserProfile(profileUpdates);
 
 		const state = useAppStore.getState();
 		expect(DBService.saveUserProfile).toHaveBeenCalledWith(
@@ -563,7 +543,6 @@ describe.skip('App Store', () => {
 				remoteNoteNew,
 			]);
 			vi.mocked(DBService.saveNote).mockResolvedValue(undefined);
-			mockSanitize.mockClear(); // Clear for this specific test
 
 			await state.syncWithNostr();
 

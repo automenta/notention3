@@ -1,5 +1,6 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
+import DOMPurify from 'dompurify';
 import {
 	AppState,
 	Note,
@@ -40,7 +41,7 @@ interface AppActions {
 	setOntology: (ontology: OntologyTree) => Promise<void>;
 
 	// User profile actions
-	updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>; // Allow partial updates
+	updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>;
 	generateAndStoreNostrKeys: (
 		privateKey?: string,
 		publicKey?: string
@@ -123,6 +124,7 @@ interface AppActions {
 		newParentId: string | undefined,
 		newIndex: number
 	) => void;
+	updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>;
 }
 
 type AppStore = AppState & AppActions;
@@ -2270,6 +2272,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 		}
 
 		set({ ontology: newOntology });
+	},
+
+	updateUserProfile: async (profileUpdates: Partial<UserProfile>) => {
+		const { userProfile } = get();
+		if (userProfile) {
+			const updatedProfile = { ...userProfile, ...profileUpdates };
+			await DBService.saveUserProfile(updatedProfile);
+			set({ userProfile: updatedProfile });
+		}
 	},
 
 	loadFolders: async () => {

@@ -11,5 +11,6 @@ import './Sidebar.ts';
 import './ChatPanel.ts';
 import './ContactList.ts';
 import './AccountWizard.ts';
+import './ChatView.ts';
 
 console.log('Web components loaded.');

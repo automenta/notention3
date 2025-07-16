@@ -90,16 +90,6 @@ export class Sidebar extends HTMLElement {
 			tab = (button as HTMLButtonElement).dataset.tab as string;
 		}
 
-		if (tab === 'profile') {
-			this.dispatchEvent(
-				new CustomEvent('notention-navigate', {
-					detail: { path: '/profile' },
-					bubbles: true,
-					composed: true,
-				})
-			);
-			return;
-		}
 		useAppStore.getState().setSidebarTab(tab as any);
 		const route = routes.find(r => r.title.toLowerCase() === tab);
 		if (route) {
@@ -202,10 +192,19 @@ export class Sidebar extends HTMLElement {
       </div>
       <div class="tabs">
         ${routes
-					.filter(r => r.title !== 'Note' && r.path !== '/')
+					.filter(
+						r =>
+							r.title === 'Notes' ||
+							r.title === 'Ontology' ||
+							r.title === 'Network' ||
+							r.title === 'Chat' ||
+							r.title === 'Settings'
+					)
 					.map(
 						route => `
-          <button class="tab-button ${this.activeTab === route.title.toLowerCase() ? 'active' : ''}" data-tab="${route.title.toLowerCase()}">${route.title}</button>
+          <button class="tab-button ${
+						this.activeTab === route.title.toLowerCase() ? 'active' : ''
+					}" data-tab="${route.title.toLowerCase()}">${route.title}</button>
         `
 					)
 					.join('')}

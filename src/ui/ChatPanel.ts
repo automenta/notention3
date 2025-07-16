@@ -37,10 +37,11 @@ export class ChatPanel extends HTMLElement {
 	}
 
 	private _updateMessages() {
+		let newMessages: DirectMessage[];
 		if (!this.contactPubkey) {
-			this.messages = [];
+			newMessages = [];
 		} else {
-			this.messages = useAppStore
+			newMessages = useAppStore
 				.getState()
 				.directMessages.filter(
 					dm =>
@@ -50,8 +51,14 @@ export class ChatPanel extends HTMLElement {
 							dm.from === useAppStore.getState().userProfile?.nostrPubkey)
 				);
 		}
-		this.render();
-		this._scrollToBottom();
+
+		if (
+			JSON.stringify(this.messages) !== JSON.stringify(newMessages)
+		) {
+			this.messages = newMessages;
+			this.render();
+			this._scrollToBottom();
+		}
 	}
 
 	private _scrollToBottom() {

@@ -51,6 +51,14 @@ export class ChatPanel extends HTMLElement {
 				);
 		}
 		this.render();
+		this._scrollToBottom();
+	}
+
+	private _scrollToBottom() {
+		const container = this.shadowRoot?.querySelector('.messages-container');
+		if (container) {
+			container.scrollTop = container.scrollHeight;
+		}
 	}
 
 	private _handleSendMessage() {
@@ -211,6 +219,8 @@ export class ChatPanel extends HTMLElement {
 						this._handleSendMessage();
 					}
 				});
+
+			this._scrollToBottom();
 		}
 	}
 }

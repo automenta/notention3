@@ -1,8 +1,11 @@
 import { useAppStore } from '../store';
 import { Contact } from '../../shared/types';
+import './Modal';
+import { Modal } from './Modal';
 
 export class ContactList extends HTMLElement {
 	private contacts: Contact[] = [];
+	private modal: Modal | null = null;
 	private unsubscribe: () => void = () => {};
 
 	constructor() {
@@ -37,11 +40,13 @@ export class ContactList extends HTMLElement {
 	}
 
 	private _handleAddContact() {
-		const pubkey = prompt('Enter contact public key:');
-		if (pubkey) {
-			const alias = prompt('Enter alias (optional):');
-			useAppStore.getState().addContact({ pubkey, alias: alias || '' });
-		}
+		this.modal?.setContent('Add Contact', 'Public Key', pubkey => {
+			if (pubkey) {
+				this.modal?.setContent('Add Contact', 'Alias (optional)', alias => {
+					useAppStore.getState().addContact({ pubkey, alias: alias || '' });
+				});
+			}
+		});
 	}
 
 	private _handleRemoveContact(pubkey: string) {
@@ -137,9 +142,11 @@ export class ContactList extends HTMLElement {
 						)
 						.join('')}
         </ul>
+        <notention-modal></notention-modal>
       </div>
     `;
 
+		this.modal = this.shadowRoot.querySelector('notention-modal');
 		this.shadowRoot.querySelectorAll('.contact-item').forEach(item => {
 			item.addEventListener('click', e => {
 				// prevent the remove button from triggering the contact click

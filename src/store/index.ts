@@ -19,6 +19,7 @@ import { FolderService } from '../services/FolderService';
 import { OntologyService } from '../services/ontology'; // Added OntologyService import
 import { NoteService } from '../services/NoteService';
 import { nostrService, NostrService } from '../services/NostrService'; // Import NostrService
+import { AIService } from '../services/AIService';
 import { Filter } from 'nostr-tools';
 
 interface AppActions {
@@ -126,6 +127,9 @@ interface AppActions {
 		newIndex: number
 	) => void;
 	updateUserProfile: (profileUpdates: Partial<UserProfile>) => Promise<void>;
+
+	// AI Service
+	getAIService: () => AIService;
 }
 
 type AppStore = AppState & AppActions;
@@ -2346,5 +2350,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 				`Failed to load folders: ${(error as Error).message}`
 			);
 		}
+	},
+
+	getAIService: () => {
+		const { userProfile } = get();
+		return new AIService(userProfile?.preferences);
 	},
 }));

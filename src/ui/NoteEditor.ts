@@ -8,12 +8,16 @@ import { suggestion } from '../lib/suggestion';
 import tippy from 'tippy.js';
 
 import { Folder } from '../../shared/types';
+import './Modal';
+import { Modal } from './Modal';
 
 export class NoteEditor extends HTMLElement {
 	private note: Note | null = null;
 	private editor: Editor | null = null;
 	private folders: Folder[] = [];
+	private modal: Modal | null = null;
 	private unsubscribe: () => void = () => {};
+	private aiEnabled = false;
 
 	constructor() {
 		super();
@@ -21,16 +25,29 @@ export class NoteEditor extends HTMLElement {
 	}
 
 	connectedCallback() {
-		this.unsubscribe = useAppStore.subscribe(
-			state => {
-				const params = new URLSearchParams(window.location.search);
-				const noteId = params.get('id');
-				this.note = noteId ? state.notes[noteId] : null;
+		const params = new URLSearchParams(window.location.search);
+		const noteId = params.get('id');
+
+		this.unsubscribe = useAppStore.subscribe(state => {
+			const newNote = noteId ? state.notes[noteId] : null;
+			if (newNote?.id !== this.note?.id) {
+				this.note = newNote;
 				this.folders = Object.values(state.folders);
+				this.aiEnabled = state.userProfile?.preferences.aiEnabled ?? false;
 				this.render();
-			},
-			state => [state.notes, state.currentNoteId, state.folders]
-		);
+			} else {
+				this.folders = Object.values(state.folders);
+				this.aiEnabled = state.userProfile?.preferences.aiEnabled ?? false;
+				this.updateFolderOptions();
+				this.updateToolbarVisibility();
+			}
+		});
+
+		const initialState = useAppStore.getState();
+		this.note = noteId ? initialState.notes[noteId] : null;
+		this.folders = Object.values(initialState.folders);
+		this.aiEnabled =
+			initialState.userProfile?.preferences.aiEnabled ?? false;
 		this.render();
 	}
 
@@ -46,8 +63,41 @@ export class NoteEditor extends HTMLElement {
 			| HTMLTextAreaElement
 			| HTMLSelectElement;
 		const { name, value } = target;
-		const updatedNote = { ...this.note, [name]: value };
-		useAppStore.getState().updateNote(this.note.id, updatedNote);
+
+		if (name === 'folderId') {
+			const updatedNote = { ...this.note, folderId: value };
+			useAppStore.getState().updateNote(this.note.id, updatedNote);
+		} else {
+			const updatedNote = { ...this.note, [name]: value };
+			useAppStore.getState().updateNote(this.note.id, updatedNote);
+		}
+	}
+
+	private updateFolderOptions() {
+		const select = this.shadowRoot?.querySelector(
+			'.folder-select'
+		) as HTMLSelectElement;
+		if (!select) return;
+
+		// Preserve the current value
+		const currentValue = select.value;
+
+		// Clear existing options
+		select.innerHTML = '<option value="">Unfiled</option>';
+
+		// Add new options
+		this.folders.forEach(folder => {
+			const option = document.createElement('option');
+			option.value = folder.id;
+			option.textContent = folder.name;
+			if (this.note?.folderId === folder.id) {
+				option.selected = true;
+			}
+			select.appendChild(option);
+		});
+
+		// Restore the selected value if it still exists
+		select.value = currentValue;
 	}
 
 	private _initTiptap() {
@@ -99,24 +149,33 @@ export class NoteEditor extends HTMLElement {
 		this.shadowRoot
 			?.querySelector('.tag-button')
 			?.addEventListener('click', () => {
-				const tag = prompt('Enter tag:');
-				if (tag) {
-					this.editor?.chain().focus().setSemanticTag(tag).run();
-				}
+				this.modal?.setContent('Add Tag', 'Tag', tag => {
+					if (tag) {
+						this.editor?.chain().focus().setSemanticTag(tag).run();
+					}
+				});
 			});
 		this.shadowRoot
 			?.querySelector('.key-value-button')
 			?.addEventListener('click', () => {
-				const key = prompt('Enter key:');
-				if (!key) return;
-				const value = prompt('Enter value:');
-				if (value) {
-					this.editor?.chain().focus().insertContent(`${key}::${value}`).run();
-				}
+				this.modal?.setContent('Add Key-Value', 'Key', key => {
+					if (!key) return;
+					this.modal?.setContent('Add Key-Value', 'Value', value => {
+						if (value) {
+							this.editor
+								?.chain()
+								.focus()
+								.insertContent(`${key}::${value}`)
+								.run();
+						}
+					});
+				});
 			});
 		this.shadowRoot
 			?.querySelector('.template-button')
 			?.addEventListener('click', () => {
+				// For templates, a dropdown or a more complex modal would be better.
+				// For now, we'll keep the prompt to avoid overcomplicating this step.
 				const template = prompt(
 					'Select a template:\n1. Meeting Note\n2. Todo List'
 				);
@@ -136,6 +195,47 @@ export class NoteEditor extends HTMLElement {
 						.run();
 				}
 			});
+
+		this.shadowRoot
+			?.querySelector('.autotag-button')
+			?.addEventListener('click', async () => {
+				if (!this.note || !this.editor) return;
+				const content = this.editor.getText();
+				const { autoTag } = useAppStore.getState().getAIService();
+				const tags = await autoTag(content);
+				if (tags) {
+					this.editor.chain().focus().setSemanticTag(tags.join(' ')).run();
+				}
+			});
+
+		this.shadowRoot
+			?.querySelector('.summarize-button')
+			?.addEventListener('click', async () => {
+				if (!this.note || !this.editor) return;
+				const content = this.editor.getHTML();
+				const { summarize } = useAppStore.getState().getAIService();
+				const summary = await summarize(content);
+				if (summary) {
+					// for now, just append to the note
+					this.editor.chain().focus().insertContent(summary).run();
+				}
+			});
+	}
+
+	private updateToolbarVisibility() {
+		const autotagButton = this.shadowRoot?.querySelector(
+			'.autotag-button'
+		) as HTMLElement;
+		const summarizeButton = this.shadowRoot?.querySelector(
+			'.summarize-button'
+		) as HTMLElement;
+
+		if (autotagButton) {
+			autotagButton.style.display = this.aiEnabled ? 'inline-block' : 'none';
+		}
+		if (summarizeButton) {
+			summarizeButton.style.display = this.aiEnabled ? 'inline-block' : 'none';
+		}
 	}
 
 	render() {
@@ -238,11 +338,15 @@ export class NoteEditor extends HTMLElement {
           <button class="tag-button">Add Tag</button>
           <button class="key-value-button">Add Key-Value</button>
           <button class="template-button">Apply Template</button>
+          <button class="autotag-button" style="display: none;">Auto-tag</button>
+          <button class="summarize-button" style="display: none;">Summarize</button>
         </div>
         <div class="content-editor"></div>
+        <notention-modal></notention-modal>
       </div>
     `;
 
+		this.modal = this.shadowRoot.querySelector('notention-modal');
 		this.shadowRoot
 			.querySelector('.title-input')
 			?.addEventListener('input', this._handleInput.bind(this));
@@ -251,6 +355,7 @@ export class NoteEditor extends HTMLElement {
 			?.addEventListener('change', this._handleInput.bind(this));
 		this._initTiptap();
 		this._setupToolbar();
+		this.updateToolbarVisibility();
 	}
 }
 

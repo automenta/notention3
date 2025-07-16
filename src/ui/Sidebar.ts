@@ -11,15 +11,21 @@ export class Sidebar extends HTMLElement {
 
 	private unsubscribe: () => void = () => {};
 
+	// Bound event handlers
+	private _boundHandleTabClick: (e: Event) => void;
+	private _boundHandleNewNote: (e: Event) => void;
+	private _boundHandleCreateFolder: (e: Event) => void;
+	private _boundHandleFolderActions: (e: Event) => void;
+
 	constructor() {
 		super();
 		this.attachShadow({ mode: 'open' });
-		this._handleTabClick = this._handleTabClick.bind(this);
-		this._handleNewNote = this._handleNewNote.bind(this);
-		this._handleCreateFolder = this._handleCreateFolder.bind(this);
-		this._handleFolderClick = this._handleFolderClick.bind(this);
-		this._handleEditFolder = this._handleEditFolder.bind(this);
-		this._handleDeleteFolder = this._handleDeleteFolder.bind(this);
+
+		// Bind methods to 'this'
+		this._boundHandleTabClick = this._handleTabClick.bind(this);
+		this._boundHandleNewNote = this._handleNewNote.bind(this);
+		this._boundHandleCreateFolder = this._handleCreateFolder.bind(this);
+		this._boundHandleFolderActions = this._handleFolderActions.bind(this);
 	}
 
 	connectedCallback() {
@@ -37,7 +43,6 @@ export class Sidebar extends HTMLElement {
 		);
 
 		this.render();
-		this.setupEventListeners();
 		useAppStore.getState().loadFolders();
 	}
 
@@ -50,89 +55,73 @@ export class Sidebar extends HTMLElement {
 		if (!this.shadowRoot) return;
 
 		this.shadowRoot.querySelectorAll('.tab-button').forEach(button => {
-			button.addEventListener('click', e =>
-				this._handleTabClick(
-					(e.target as HTMLButtonElement).dataset.tab as string
-				)
-			);
+			button.addEventListener('click', this._boundHandleTabClick);
 		});
 
 		this.shadowRoot
 			.querySelector('.new-note-button')
-			?.addEventListener('click', this._handleNewNote);
+			?.addEventListener('click', this._boundHandleNewNote);
 		this.shadowRoot
 			.querySelector('.create-folder-button')
-			?.addEventListener('click', this._handleCreateFolder);
-
-		// Event delegation for folder items and actions
+			?.addEventListener('click', this._boundHandleCreateFolder);
 		this.shadowRoot
 			.querySelector('.folder-section')
-			?.addEventListener('click', e => {
-				const target = e.target as HTMLElement;
-				const folderItem = target.closest('.folder-item');
-				if (folderItem) {
-					const folderId = folderItem.dataset.folderId;
-					if (
-						target.classList.contains('folder-label') ||
-						target.closest('.folder-label')
-					) {
-						this._handleFolderClick(folderId);
-					} else if (target.closest('.edit-folder-button')) {
-						const folderName = folderItem.dataset.folderName || '';
-						this._handleEditFolder(folderId as string, folderName);
-					} else if (target.closest('.delete-folder-button')) {
-						const folderName = folderItem.dataset.folderName || '';
-						this._handleDeleteFolder(folderId as string, folderName);
-					}
-				} else if (target.classList.contains('unfiled-notes-item')) {
-					this._handleFolderClick(undefined);
-				}
-			});
+			?.addEventListener('click', this._boundHandleFolderActions);
 	}
 
 	private removeEventListeners() {
 		if (!this.shadowRoot) return;
 
 		this.shadowRoot.querySelectorAll('.tab-button').forEach(button => {
-			button.removeEventListener('click', e =>
-				this._handleTabClick(
-					(e.target as HTMLButtonElement).dataset.tab as string
-				)
-			);
+			button.removeEventListener('click', this._boundHandleTabClick);
 		});
 
 		this.shadowRoot
 			.querySelector('.new-note-button')
-			?.removeEventListener('click', this._handleNewNote);
+			?.removeEventListener('click', this._boundHandleNewNote);
 		this.shadowRoot
 			.querySelector('.create-folder-button')
-			?.removeEventListener('click', this._handleCreateFolder);
+			?.removeEventListener('click', this._boundHandleCreateFolder);
 		this.shadowRoot
 			.querySelector('.folder-section')
-			?.removeEventListener('click', e => {
-				const target = e.target as HTMLElement;
-				const folderItem = target.closest('.folder-item');
-				if (folderItem) {
-					const folderId = folderItem.dataset.folderId;
-					if (
-						target.classList.contains('folder-label') ||
-						target.closest('.folder-label')
-					) {
-						this._handleFolderClick(folderId);
-					} else if (target.closest('.edit-folder-button')) {
-						const folderName = folderItem.dataset.folderName || '';
-						this._handleEditFolder(folderId as string, folderName);
-					} else if (target.closest('.delete-folder-button')) {
-						const folderName = folderItem.dataset.folderName || '';
-						this._handleDeleteFolder(folderId as string, folderName);
-					}
-				} else if (target.classList.contains('unfiled-notes-item')) {
-					this._handleFolderClick(undefined);
-				}
-			});
+			?.removeEventListener('click', this._boundHandleFolderActions);
 	}
 
-	private _handleTabClick(tab: string) {
+	private _handleFolderActions(e: Event) {
+		const target = e.target as HTMLElement;
+		const folderItem = target.closest('.folder-item');
+
+		if (folderItem) {
+			const folderId = folderItem.dataset.folderId;
+			if (!folderId) return;
+
+			if (
+				target.classList.contains('folder-label') ||
+				target.closest('.folder-label')
+			) {
+				this._handleFolderClick(folderId);
+			} else if (target.closest('.edit-folder-button')) {
+				const folderName = folderItem.dataset.folderName || '';
+				this._handleEditFolder(folderId, folderName);
+			} else if (target.closest('.delete-folder-button')) {
+				const folderName = folderItem.dataset.folderName || '';
+				this._handleDeleteFolder(folderId, folderName);
+			}
+		} else if (target.closest('.unfiled-notes-item')) {
+			this._handleFolderClick(undefined);
+		}
+	}
+
+	private _handleTabClick(e_or_tab: Event | string) {
+		let tab: string;
+		if (typeof e_or_tab === 'string') {
+			tab = e_or_tab;
+		} else {
+			const button = (e_or_tab.target as HTMLElement).closest('.tab-button');
+			if (!button) return;
+			tab = (button as HTMLButtonElement).dataset.tab as string;
+		}
+
 		if (tab === 'profile') {
 			this.dispatchEvent(
 				new CustomEvent('notention-navigate', {
@@ -308,6 +297,8 @@ export class Sidebar extends HTMLElement {
 
 	render() {
 		if (!this.shadowRoot) return;
+
+		this.removeEventListeners();
 
 		const styles = `
       :host {

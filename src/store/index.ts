@@ -205,7 +205,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       state.setLoading('notes', true);
       state.setLoading('ontology', true);
       
-      const notesList = await NoteService.getNotes(); // Renamed for clarity
+      const notesList = await DBService.getAllNotes(); // Renamed for clarity
       const notesMap: { [id: string]: Note } = {};
       notesList.forEach(note => { // Iterate over notesList
         // Ensure dates are Date objects after fetching

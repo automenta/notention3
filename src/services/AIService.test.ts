@@ -245,15 +245,6 @@ describe('AIService', () => {
         expect(console.error).toHaveBeenCalledWith('Error getting summarization:', expect.any(Error));
       });
     });
-  });
-
-  it('should handle errors gracefully for getSummarization', async () => {
-      setMockStoreUserProfile({ aiEnabled: true, geminiApiKey: 'gemini-key', aiProviderPreference: 'gemini' });
-      vi.mocked(mockGeminiInstance.invoke).mockRejectedValue(new Error('AI API Error'));
-      const result = await aiService.getSummarization('content');
-      expect(result).toEqual('');
-      expect(console.error).toHaveBeenCalledWith('Error getting summarization:', expect.any(Error));
-    });
 
   describe('getEmbeddingVector', () => {
     it('should return empty array if AI is disabled', async () => {

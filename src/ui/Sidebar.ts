@@ -25,16 +25,38 @@ export class Sidebar extends HTMLElement {
 	}
 
 	connectedCallback() {
+		this.render();
+		this.setupEventListeners();
+		useAppStore.getState().loadFolders();
+
 		this.unsubscribe = useAppStore.subscribe(
 			state => {
 				this.activeTab = state.sidebarTab;
-				this.render(); // Re-render when store state changes
+				this.updateTabs();
 			},
 			state => state.sidebarTab
 		);
+	}
 
-		this.render();
-		useAppStore.getState().loadFolders();
+	disconnectedCallback() {
+		this.unsubscribe();
+		this.removeEventListeners();
+	}
+
+	private setupEventListeners() {
+		if (!this.shadowRoot) return;
+
+		this.shadowRoot.addEventListener('click', (e: Event) => {
+			const target = e.target as HTMLElement;
+			const tabButton = target.closest('.tab-button');
+			const newNoteButton = target.closest('.new-note-button');
+
+			if (tabButton) {
+				this._handleTabClick(e);
+			} else if (newNoteButton) {
+				this._handleNewNote();
+			}
+		});
 
 		this.addEventListener(
 			'notention-sidebar-tab-click',
@@ -42,37 +64,12 @@ export class Sidebar extends HTMLElement {
 		);
 	}
 
-	disconnectedCallback() {
-		this.unsubscribe();
-		this.removeEventListeners();
+	private removeEventListeners() {
+		// Event listeners are now delegated, so we only need to remove the one on the host
 		this.removeEventListener(
 			'notention-sidebar-tab-click',
 			this._boundSidebarTabClick
 		);
-	}
-
-	private setupEventListeners() {
-		if (!this.shadowRoot) return;
-
-		this.shadowRoot.querySelectorAll('.tab-button').forEach(button => {
-			button.addEventListener('click', this._boundHandleTabClick);
-		});
-
-		this.shadowRoot
-			.querySelector('.new-note-button')
-			?.addEventListener('click', this._boundHandleNewNote);
-	}
-
-	private removeEventListeners() {
-		if (!this.shadowRoot) return;
-
-		this.shadowRoot.querySelectorAll('.tab-button').forEach(button => {
-			button.removeEventListener('click', this._boundHandleTabClick);
-		});
-
-		this.shadowRoot
-			.querySelector('.new-note-button')
-			?.removeEventListener('click', this._boundHandleNewNote);
 	}
 
 	private _handleSidebarTabClick(e: Event) {
@@ -126,10 +123,20 @@ export class Sidebar extends HTMLElement {
 	}
 
 
+	private updateTabs() {
+		if (!this.shadowRoot) return;
+		this.shadowRoot.querySelectorAll('.tab-button').forEach(button => {
+			const tab = button.getAttribute('data-tab');
+			if (tab === this.activeTab) {
+				button.classList.add('active');
+			} else {
+				button.classList.remove('active');
+			}
+		});
+	}
+
 	render() {
 		if (!this.shadowRoot) return;
-
-		this.removeEventListeners();
 
 		const styles = `
       :host {
@@ -214,8 +221,6 @@ export class Sidebar extends HTMLElement {
         <notention-folder-tree></notention-folder-tree>
       </div>
     `;
-
-		this.setupEventListeners(); // Re-attach event listeners after re-rendering
 	}
 }
 

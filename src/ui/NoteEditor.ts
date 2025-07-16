@@ -1,6 +1,7 @@
 import { useAppStore } from '../store';
 import { debounce } from '../lib/utils';
 import { Note, NotentionTemplate } from '../../shared/types';
+import { NoteService } from '../services/NoteService';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { SemanticTag } from '../extensions/SemanticTag';
@@ -26,9 +27,21 @@ export class NoteEditor extends HTMLElement {
 		this.attachShadow({ mode: 'open' });
 	}
 
-	connectedCallback() {
+	async connectedCallback() {
 		const params = new URLSearchParams(window.location.search);
-		const noteId = params.get('id');
+		let noteId = params.get('id');
+
+		if (!noteId) {
+			const newNote = await NoteService.createNote({});
+			this.note = newNote;
+			// Update URL to reflect new note id
+			window.history.replaceState(
+				{},
+				'',
+				`${window.location.pathname}?id=${newNote.id}`
+			);
+			noteId = newNote.id;
+		}
 
 		this.unsubscribe = useAppStore.subscribe(state => {
 			const newNote = noteId ? state.notes[noteId] : null;
@@ -48,7 +61,7 @@ export class NoteEditor extends HTMLElement {
 		});
 
 		const initialState = useAppStore.getState();
-		this.note = noteId ? initialState.notes[noteId] : null;
+		this.note = noteId ? initialState.notes[noteId] : this.note;
 		this.folders = Object.values(initialState.folders);
 		this.templates = Object.values(initialState.templates);
 		this.aiEnabled =
@@ -228,7 +241,10 @@ export class NoteEditor extends HTMLElement {
 		this.shadowRoot
 			?.querySelector('.delete-note-button')
 			?.addEventListener('click', () => {
-				if (this.note && confirm('Are you sure you want to delete this note?')) {
+				if (
+					this.note &&
+					confirm('Are you sure you want to delete this note?')
+				) {
 					useAppStore.getState().deleteNote(this.note.id);
 					this.dispatchEvent(
 						new CustomEvent('notention-navigate', {
@@ -329,12 +345,8 @@ export class NoteEditor extends HTMLElement {
     `;
 
 		if (!this.note) {
-			this.shadowRoot.innerHTML = `
-        <style>${styles}</style>
-        <div class="editor-container">
-          <p>Select a note to edit or create a new one.</p>
-        </div>
-      `;
+			// This should not happen anymore with the new logic in connectedCallback
+			this.shadowRoot.innerHTML = `<p>Loading...</p>`;
 			return;
 		}
 
@@ -375,6 +387,7 @@ export class NoteEditor extends HTMLElement {
           </select>
           <button class="autotag-button" style="display: none;">Auto-tag</button>
           <button class="summarize-button" style="display: none;">Summarize</button>
+          <button class="delete-note-button">Delete</button>
         </div>
         <div class="content-editor"></div>
         <notention-modal></notention-modal>

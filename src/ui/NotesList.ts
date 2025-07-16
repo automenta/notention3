@@ -1,5 +1,7 @@
 import { useAppStore } from '../store';
 import { Note } from '../../shared/types';
+import { NoteService } from '../services/NoteService';
+import { memoize } from '../lib/memoize';
 
 export class NotesList extends HTMLElement {
 	private notes: Note[] = [];
@@ -7,10 +9,19 @@ export class NotesList extends HTMLElement {
 	private searchQuery: string = '';
 	private sortBy: 'title' | 'createdAt' | 'updatedAt' = 'updatedAt';
 	private unsubscribe: () => void = () => {};
+	private _memoizedGetFilteredAndSortedNotes: (
+		notes: Note[],
+		folderId: string | undefined,
+		searchQuery: string,
+		sortBy: 'title' | 'createdAt' | 'updatedAt'
+	) => Note[];
 
 	constructor() {
 		super();
 		this.attachShadow({ mode: 'open' });
+		this._memoizedGetFilteredAndSortedNotes = memoize(
+			this._getFilteredAndSortedNotes.bind(this)
+		);
 	}
 
 	connectedCallback() {
@@ -18,13 +29,24 @@ export class NotesList extends HTMLElement {
 			state => {
 				this.activeFolderId = state.searchFilters.folderId;
 				this.searchQuery = state.searchQuery;
-				this.notes = this._getFilteredAndSortedNotes();
+				this.notes = this._memoizedGetFilteredAndSortedNotes(
+					Object.values(state.notes),
+					this.activeFolderId,
+					this.searchQuery,
+					this.sortBy
+				);
 				this.render();
 			},
 			state => [state.notes, state.searchFilters.folderId, state.searchQuery]
 		);
 
-		this.notes = this._getFilteredAndSortedNotes();
+		const state = useAppStore.getState();
+		this.notes = this._memoizedGetFilteredAndSortedNotes(
+			Object.values(state.notes),
+			state.searchFilters.folderId,
+			state.searchQuery,
+			this.sortBy
+		);
 		this.render();
 	}
 
@@ -32,15 +54,17 @@ export class NotesList extends HTMLElement {
 		this.unsubscribe();
 	}
 
-	private _getFilteredAndSortedNotes(): Note[] {
-		const { notes, searchFilters, searchQuery } = useAppStore.getState();
-		let filteredNotes = Object.values(notes);
+	private _getFilteredAndSortedNotes(
+		notes: Note[],
+		folderId: string | undefined,
+		searchQuery: string,
+		sortBy: 'title' | 'createdAt' | 'updatedAt'
+	): Note[] {
+		let filteredNotes = notes;
 
 		// Filter by folder
-		if (searchFilters.folderId) {
-			filteredNotes = filteredNotes.filter(
-				note => note.folderId === searchFilters.folderId
-			);
+		if (folderId) {
+			filteredNotes = filteredNotes.filter(note => note.folderId === folderId);
 		}
 
 		// Filter by search query
@@ -58,12 +82,11 @@ export class NotesList extends HTMLElement {
 
 		// Sort
 		return filteredNotes.sort((a, b) => {
-			if (this.sortBy === 'title') {
+			if (sortBy === 'title') {
 				return a.title.localeCompare(b.title);
 			} else {
 				return (
-					new Date(b[this.sortBy]).getTime() -
-					new Date(a[this.sortBy]).getTime()
+					new Date(b[sortBy]).getTime() - new Date(a[sortBy]).getTime()
 				);
 			}
 		});
@@ -87,8 +110,25 @@ export class NotesList extends HTMLElement {
 	private _handleSort(e: Event) {
 		const target = e.target as HTMLSelectElement;
 		this.sortBy = target.value as 'title' | 'createdAt' | 'updatedAt';
-		this.notes = this._getFilteredAndSortedNotes();
+		const state = useAppStore.getState();
+		this.notes = this._memoizedGetFilteredAndSortedNotes(
+			Object.values(state.notes),
+			this.activeFolderId,
+			this.searchQuery,
+			this.sortBy
+		);
 		this.render();
+	}
+
+	private async _handleNewNote() {
+		const newNote = await NoteService.createNote({});
+		this.dispatchEvent(
+			new CustomEvent('notention-navigate', {
+				detail: { path: `/note?id=${newNote.id}` },
+				bubbles: true,
+				composed: true,
+			})
+		);
 	}
 
 	render() {
@@ -100,10 +140,15 @@ export class NotesList extends HTMLElement {
         flex-direction: column;
         gap: 16px;
       }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 12px;
+      }
       .filters {
         display: flex;
         gap: 8px;
-        padding: 0 12px;
       }
       .search-input {
         flex: 1;
@@ -148,13 +193,16 @@ export class NotesList extends HTMLElement {
 		this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="notes-list-container">
-        <div class="filters">
-          <input type="search" class="search-input" placeholder="Search notes..." .value=${this.searchQuery}>
-          <select class="sort-select">
-            <option value="updatedAt" ${this.sortBy === 'updatedAt' ? 'selected' : ''}>Sort by updated</option>
-            <option value="createdAt" ${this.sortBy === 'createdAt' ? 'selected' : ''}>Sort by created</option>
-            <option value="title" ${this.sortBy === 'title' ? 'selected' : ''}>Sort by title</option>
-          </select>
+        <div class="header">
+          <div class="filters">
+            <input type="search" class="search-input" placeholder="Search notes..." .value=${this.searchQuery}>
+            <select class="sort-select">
+              <option value="updatedAt" ${this.sortBy === 'updatedAt' ? 'selected' : ''}>Sort by updated</option>
+              <option value="createdAt" ${this.sortBy === 'createdAt' ? 'selected' : ''}>Sort by created</option>
+              <option value="title" ${this.sortBy === 'title' ? 'selected' : ''}>Sort by title</option>
+            </select>
+          </div>
+          <notention-button class="new-note-button">New Note</notention-button>
         </div>
         <ul class="notes-list">
           ${this.notes
@@ -183,6 +231,9 @@ export class NotesList extends HTMLElement {
 		this.shadowRoot
 			.querySelector('.sort-select')
 			?.addEventListener('change', this._handleSort.bind(this));
+		this.shadowRoot
+			.querySelector('.new-note-button')
+			?.addEventListener('click', this._handleNewNote.bind(this));
 	}
 }
 

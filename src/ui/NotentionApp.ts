@@ -27,11 +27,11 @@ export class NotentionApp extends HTMLElement {
 
 	connectedCallback() {
 		this.unsubscribe = useAppStore.subscribe(
+			state => !!state.userProfile?.nostrPubkey,
 			hasProfile => {
 				this.showWizard = !hasProfile;
 				this.render();
 			}
-			//state => !!state.userProfile?.nostrPubkey
 		);
 
 		this.addEventListener('notention-navigate', this._handleNavigate);

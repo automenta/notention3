@@ -1856,38 +1856,37 @@ export const useAppStore = create<AppStore>((set, get) => ({
 							);
 							// Note: If publish fails, it remains in the queue. No explicit re-add needed here.
 						}
-					} else if (op.action === 'delete') {
-						const eventIdToDelete =
-							op.nostrEventId ||
-							(await DBService.getNote(op.noteId))?.nostrSyncEventId;
-						if (eventIdToDelete) {
-							console.log(
-								`Processing pending Kind 5 deletion for Nostr event ID: ${eventIdToDelete} (local note ID: ${op.noteId}).`
-							);
-							try {
-								await nostrService.publishDeletionEvent(
-									[eventIdToDelete],
-									'Note deleted by user during sync.',
-									relays
-								);
-								await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
-							} catch (e) {
-								console.warn(
-									`Failed to publish Kind 5 for event ${eventIdToDelete} during sync. Will retry later.`,
-									e
-								);
-								// Note: If publish fails, it remains in the queue.
-							}
-						} else {
-							console.log(
-								`Skipping deletion for note ${op.noteId} as no Nostr event ID was found. Removing from queue.`
+					}
+				} else if (op.action === 'delete') {
+					const eventIdToDelete =
+						op.nostrEventId ||
+						(await DBService.getNote(op.noteId))?.nostrSyncEventId;
+					if (eventIdToDelete) {
+						console.log(
+							`Processing pending Kind 5 deletion for Nostr event ID: ${eventIdToDelete} (local note ID: ${op.noteId}).`
+						);
+						try {
+							await nostrService.publishDeletionEvent(
+								[eventIdToDelete],
+								'Note deleted by user during sync.',
+								relays
 							);
 							await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
+						} catch (e) {
+							console.warn(
+								`Failed to publish Kind 5 for event ${eventIdToDelete} during sync. Will retry later.`,
+								e
+							);
+							// Note: If publish fails, it remains in the queue.
 						}
+					} else {
+						console.log(
+							`Skipping deletion for note ${op.noteId} as no Nostr event ID was found. Removing from queue.`
+						);
+						await DBService.removeNoteFromSyncQueue(op.noteId); // Use op.noteId
 					}
-				} // Closes for...of pendingNoteOps
-			} // Closes main try block for sync operations (this was missing in the original problem description)
-
+				}
+			} // Closes for...of pendingNoteOps
 			recordSyncTime(currentSyncTime); // Update last sync time
 			// toast.success("Sync Complete", { id: "nostr-sync", description: "Data synced with Nostr relays." });
 			console.log('Sync with Nostr complete.');

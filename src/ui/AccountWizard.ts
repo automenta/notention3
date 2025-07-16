@@ -1,59 +1,65 @@
 import { useAppStore } from '../store';
 
 export class AccountWizard extends HTMLElement {
-  private step = 1;
-  private unsubscribe: () => void = () => {};
+	private step = 1;
+	private unsubscribe: () => void = () => {};
 
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-  }
+	constructor() {
+		super();
+		this.attachShadow({ mode: 'open' });
+	}
 
-  connectedCallback() {
-    this.render();
-  }
+	connectedCallback() {
+		this.render();
+	}
 
-  disconnectedCallback() {
-    this.unsubscribe();
-  }
+	disconnectedCallback() {
+		this.unsubscribe();
+	}
 
-  private nextStep() {
-    this.step++;
-    this.render();
-  }
+	private nextStep() {
+		this.step++;
+		this.render();
+	}
 
-  private _handleGenerateKeys() {
-    useAppStore.getState().generateAndStoreNostrKeys();
-    this.nextStep();
-  }
+	private _handleGenerateKeys() {
+		useAppStore.getState().generateAndStoreNostrKeys();
+		this.nextStep();
+	}
 
-  private _handleImportKey() {
-    const privateKey = prompt('Enter your Nostr private key:');
-    if (privateKey) {
-      useAppStore.getState().generateAndStoreNostrKeys(privateKey);
-      this.nextStep();
-    }
-  }
+	private _handleImportKey() {
+		const privateKey = prompt('Enter your Nostr private key:');
+		if (privateKey) {
+			useAppStore.getState().generateAndStoreNostrKeys(privateKey);
+			this.nextStep();
+		}
+	}
 
-  private _handleSetRelays() {
-    const relayInputs = this.shadowRoot?.querySelectorAll('.relay-input') as NodeListOf<HTMLInputElement>;
-    const relays = Array.from(relayInputs).map(input => input.value.trim()).filter(Boolean);
-    if (relays.length > 0) {
-      useAppStore.getState().setNostrRelays(relays);
-      this.nextStep();
-    } else {
-      alert('Please enter at least one relay.');
-    }
-  }
+	private _handleSetRelays() {
+		const relayInputs = this.shadowRoot?.querySelectorAll(
+			'.relay-input'
+		) as NodeListOf<HTMLInputElement>;
+		const relays = Array.from(relayInputs)
+			.map(input => input.value.trim())
+			.filter(Boolean);
+		if (relays.length > 0) {
+			useAppStore.getState().setNostrRelays(relays);
+			this.nextStep();
+		} else {
+			alert('Please enter at least one relay.');
+		}
+	}
 
-  private _handleFinish() {
-    this.dispatchEvent(new CustomEvent('wizard-completed', { bubbles: true, composed: true }));
-  }
+	private _handleFinish() {
+		this.dispatchEvent(
+			new CustomEvent('wizard-completed', { bubbles: true, composed: true })
+		);
+	}
 
-  render() {
-    if (!this.shadowRoot) return;
+	render() {
+		if (!this.shadowRoot) return;
 
-    const styles = `
+		const styles = `
       .wizard-container {
         position: fixed;
         top: 0;
@@ -95,7 +101,7 @@ export class AccountWizard extends HTMLElement {
       }
     `;
 
-    this.shadowRoot.innerHTML = `
+		this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="wizard-container">
         <div class="wizard-content">
@@ -129,12 +135,22 @@ export class AccountWizard extends HTMLElement {
       </div>
     `;
 
-    this.shadowRoot.querySelector('.next-button')?.addEventListener('click', this.nextStep.bind(this));
-    this.shadowRoot.querySelector('.generate-button')?.addEventListener('click', this._handleGenerateKeys.bind(this));
-    this.shadowRoot.querySelector('.import-button')?.addEventListener('click', this._handleImportKey.bind(this));
-    this.shadowRoot.querySelector('.set-relays-button')?.addEventListener('click', this._handleSetRelays.bind(this));
-    this.shadowRoot.querySelector('.finish-button')?.addEventListener('click', this._handleFinish.bind(this));
-  }
+		this.shadowRoot
+			.querySelector('.next-button')
+			?.addEventListener('click', this.nextStep.bind(this));
+		this.shadowRoot
+			.querySelector('.generate-button')
+			?.addEventListener('click', this._handleGenerateKeys.bind(this));
+		this.shadowRoot
+			.querySelector('.import-button')
+			?.addEventListener('click', this._handleImportKey.bind(this));
+		this.shadowRoot
+			.querySelector('.set-relays-button')
+			?.addEventListener('click', this._handleSetRelays.bind(this));
+		this.shadowRoot
+			.querySelector('.finish-button')
+			?.addEventListener('click', this._handleFinish.bind(this));
+	}
 }
 
 customElements.define('notention-account-wizard', AccountWizard);

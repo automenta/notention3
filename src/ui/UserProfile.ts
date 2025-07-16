@@ -2,33 +2,33 @@ import { useAppStore } from '../store';
 import { UserProfile as UserProfileType } from '../../shared/types';
 
 export class UserProfile extends HTMLElement {
-  private profile: UserProfileType | undefined;
-  private unsubscribe: () => void = () => {};
+	private profile: UserProfileType | undefined;
+	private unsubscribe: () => void = () => {};
 
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-  }
+	constructor() {
+		super();
+		this.attachShadow({ mode: 'open' });
+	}
 
-  connectedCallback() {
-    this.unsubscribe = useAppStore.subscribe(
-      (profile) => {
-        this.profile = profile;
-        this.render();
-      },
-      (state) => state.userProfile
-    );
-    this.render();
-  }
+	connectedCallback() {
+		this.unsubscribe = useAppStore.subscribe(
+			profile => {
+				this.profile = profile;
+				this.render();
+			},
+			state => state.userProfile
+		);
+		this.render();
+	}
 
-  disconnectedCallback() {
-    this.unsubscribe();
-  }
+	disconnectedCallback() {
+		this.unsubscribe();
+	}
 
-  render() {
-    if (!this.shadowRoot) return;
+	render() {
+		if (!this.shadowRoot) return;
 
-    this.shadowRoot.innerHTML = `
+		this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
@@ -49,8 +49,8 @@ export class UserProfile extends HTMLElement {
       <div class="profile-card">
         <h2>User Profile</h2>
         ${
-          this.profile
-            ? `
+					this.profile
+						? `
               <div class="profile-field">
                 <label>Nostr Public Key:</label>
                 <span>${this.profile.nostrPubkey}</span>
@@ -62,18 +62,18 @@ export class UserProfile extends HTMLElement {
               <div class="profile-field">
                 <label>Shared Values:</label>
                 <span>${
-                  this.profile.sharedValues
-                    ? this.profile.sharedValues.join(', ')
-                    : 'None'
-                }</span>
+									this.profile.sharedValues
+										? this.profile.sharedValues.join(', ')
+										: 'None'
+								}</span>
               </div>
               <button>Edit Profile</button>
             `
-            : '<p>Loading profile...</p>'
-        }
+						: '<p>Loading profile...</p>'
+				}
       </div>
     `;
-  }
+	}
 }
 
 customElements.define('notention-user-profile', UserProfile);

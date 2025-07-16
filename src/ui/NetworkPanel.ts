@@ -2,50 +2,52 @@ import { useAppStore } from '../store';
 import { Match, Note } from '../../shared/types';
 
 export class NetworkPanel extends HTMLElement {
-  private connected: boolean = false;
-  private matches: Match[] = [];
-  private notes: { [id: string]: Note } = {};
-  private unsubscribe: () => void = () => {};
+	private connected: boolean = false;
+	private matches: Match[] = [];
+	private notes: { [id: string]: Note } = {};
+	private unsubscribe: () => void = () => {};
 
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-  }
+	constructor() {
+		super();
+		this.attachShadow({ mode: 'open' });
+	}
 
-  connectedCallback() {
-    this.unsubscribe = useAppStore.subscribe(
-      (state) => {
-        this.connected = state.nostrConnected;
-        this.matches = state.matches;
-        this.notes = state.notes;
-        this.render();
-      },
-      (state) => [state.nostrConnected, state.matches, state.notes]
-    );
-    this.render();
-  }
+	connectedCallback() {
+		this.unsubscribe = useAppStore.subscribe(
+			state => {
+				this.connected = state.nostrConnected;
+				this.matches = state.matches;
+				this.notes = state.notes;
+				this.render();
+			},
+			state => [state.nostrConnected, state.matches, state.notes]
+		);
+		this.render();
+	}
 
-  disconnectedCallback() {
-    this.unsubscribe();
-  }
+	disconnectedCallback() {
+		this.unsubscribe();
+	}
 
-  private _handleViewNote(noteId: string) {
-    this.dispatchEvent(new CustomEvent('notention-navigate', {
-      detail: { path: `/note?id=${noteId}` },
-      bubbles: true,
-      composed: true,
-    }));
-  }
+	private _handleViewNote(noteId: string) {
+		this.dispatchEvent(
+			new CustomEvent('notention-navigate', {
+				detail: { path: `/note?id=${noteId}` },
+				bubbles: true,
+				composed: true,
+			})
+		);
+	}
 
-  private _handleContactAuthor(author: string) {
-    // This will be implemented in a later step
-    alert(`Contacting ${author}...`);
-  }
+	private _handleContactAuthor(author: string) {
+		// This will be implemented in a later step
+		alert(`Contacting ${author}...`);
+	}
 
-  render() {
-    if (!this.shadowRoot) return;
+	render() {
+		if (!this.shadowRoot) return;
 
-    const styles = `
+		const styles = `
       .network-panel {
         display: flex;
         flex-direction: column;
@@ -81,7 +83,7 @@ export class NetworkPanel extends HTMLElement {
       }
     `;
 
-    this.shadowRoot.innerHTML = `
+		this.shadowRoot.innerHTML = `
       <style>${styles}</style>
       <div class="network-panel">
         <h2>Network</h2>
@@ -90,9 +92,10 @@ export class NetworkPanel extends HTMLElement {
         </p>
         <h3>Matches</h3>
         <ul class="matches-list">
-          ${this.matches.map(match => {
-            const note = this.notes[match.localNoteId];
-            return `
+          ${this.matches
+						.map(match => {
+							const note = this.notes[match.localNoteId];
+							return `
               <li class="match-item">
                 <p class="match-author">From: ${match.targetAuthor}</p>
                 <p><strong>Matched Note:</strong> ${note?.title || 'Unknown'}</p>
@@ -104,29 +107,32 @@ export class NetworkPanel extends HTMLElement {
                 </div>
               </li>
             `;
-          }).join('')}
+						})
+						.join('')}
         </ul>
       </div>
     `;
 
-    this.shadowRoot.querySelectorAll('.view-note-button').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const noteId = (e.target as HTMLButtonElement).dataset.noteId;
-        if (noteId) {
-          this._handleViewNote(noteId);
-        }
-      });
-    });
+		this.shadowRoot.querySelectorAll('.view-note-button').forEach(button => {
+			button.addEventListener('click', e => {
+				const noteId = (e.target as HTMLButtonElement).dataset.noteId;
+				if (noteId) {
+					this._handleViewNote(noteId);
+				}
+			});
+		});
 
-    this.shadowRoot.querySelectorAll('.contact-author-button').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const author = (e.target as HTMLButtonElement).dataset.author;
-        if (author) {
-          this._handleContactAuthor(author);
-        }
-      });
-    });
-  }
+		this.shadowRoot
+			.querySelectorAll('.contact-author-button')
+			.forEach(button => {
+				button.addEventListener('click', e => {
+					const author = (e.target as HTMLButtonElement).dataset.author;
+					if (author) {
+						this._handleContactAuthor(author);
+					}
+				});
+			});
+	}
 }
 
 customElements.define('notention-network-panel', NetworkPanel);

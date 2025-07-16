@@ -3,6 +3,7 @@
 ## Architecture
 
 ### System Components
+
 - **Frontend**:
   - Framework: TypeScript, Web Components.
   - State Management: Zustand.
@@ -25,39 +26,41 @@
   - Service Workers for offline caching.
 
 ### Data Model
+
 - **Note**:
   ```typescript
   interface Note {
-    id: string;
-    title: string;
-    content: string;
-    tags: string[];
-    values: { [key: string]: string };
-    fields: { [key: string]: string };
-    status: "draft" | "published";
-    createdAt: Date;
-    updatedAt: Date;
+  	id: string;
+  	title: string;
+  	content: string;
+  	tags: string[];
+  	values: { [key: string]: string };
+  	fields: { [key: string]: string };
+  	status: 'draft' | 'published';
+  	createdAt: Date;
+  	updatedAt: Date;
   }
   ```
 - **Ontology**:
   ```typescript
   interface OntologyNode {
-    id: string;
-    label: string;
-    attributes?: { [key: string]: string };
-    parentId?: string;
+  	id: string;
+  	label: string;
+  	attributes?: { [key: string]: string };
+  	parentId?: string;
   }
   ```
 - **User Profile**:
   ```typescript
   interface UserProfile {
-    nostrPubkey: string;
-    sharedTags: string[];
-    sharedValues?: string[];
+  	nostrPubkey: string;
+  	sharedTags: string[];
+  	sharedValues?: string[];
   }
   ```
 
 ### Architectural Patterns
+
 - Component-based architecture for modular UI.
 - Centralized state with Zustand.
 - Service-oriented logic abstraction.
@@ -67,6 +70,7 @@
 ## Implementation Details
 
 ### Example Workflow
+
 1. **Create Note**:
    - Type title and content in editor.
    - Insert `#NLP` via autocomplete (ontology suggests `#AI`).
@@ -88,23 +92,25 @@
    - Auto-tags note with `#MachineLearning`.
 
 ### Development Guidelines
+
 - Modular services and components.
 - Vitest unit tests for services and UI.
 - Latest TypeScript and library versions.
 - Compact, deduplicated code with clear naming.
 
 ### Deployment
+
 - Host on static CDN (e.g., Vercel) with Service Workers.
 - Connect to public Nostr relays (e.g., wss://relay.damus.io); guide for user-run relays.
 - Provide Ollama setup instructions for AI features.
 
-
-
 ## 1. Introduction
+
     - Project Overview and Goals
     - Technology Stack (TypeScript, WebComponents, Vite, Zustand, Nostr, Tiptap, LocalForage)
 
 ## 2. Project Structure
+
     - Overview of key directories (`src/`, `public/`, `docs/`, etc.)
     - `src/components/`: UI Components
     - `src/services/`: Core logic (DB, Nostr, AI, Notes, Ontology, etc.)
@@ -113,6 +119,7 @@
     - `shared/`: TypeScript types shared between components/services
 
 ## 3. Getting Started (Development Environment)
+
     - Prerequisites (Node.js, npm/yarn)
     - Cloning the Repository
     - Installing Dependencies (`npm install` or `yarn install`)
@@ -120,6 +127,7 @@
     - Building for Production (`npm run build` or `yarn build`)
 
 ## 4. Core Concepts and Architecture
+
     - State Management (Zustand)
         - Key stores and actions
         - Async operations
@@ -139,11 +147,13 @@
     - PWA and Service Workers (`vite-plugin-pwa`, Workbox)
 
 ## 5. Coding Conventions and Style
+
     - Linting and Formatting (ESLint, Prettier - if configured)
     - TypeScript Best Practices
     - Naming Conventions
 
 ## 6. Testing
+
     - Unit Tests (Vitest)
         - Running tests (`npm run test` or `yarn test`)
         - Test file locations (e.g., `*.test.ts`)
@@ -151,6 +161,7 @@
     - End-to-End Testing (Not currently set up, potential future addition)
 
 ## 7. Key Services Deep Dive
+
     - `NoteService.ts`: CRUD, semantic search for notes.
     - `OntologyService.ts`: Managing the ontology tree, semantic matching.
     - `NostrService.ts`: Interacting with Nostr relays, encryption, syncing.
@@ -158,29 +169,52 @@
     - `AIService.ts`: Optional AI features (auto-tagging, summarization).
 
 ## 8. Contributing
+
     - Reporting Bugs (GitHub Issues)
     - Suggesting Features
     - Pull Request Process (Fork, Branch, Commit, PR)
 
 ## 9. Deployment
+
     - The application is a static PWA, buildable with `npm run build`.
     - Deploy the contents of the `dist/` folder to any static web hosting service (e.g., Vercel, Netlify, GitHub Pages).
     - Ensure Service Workers are correctly served and configured on the hosting platform.
 
 ## 10. Future Development / Roadmap
+
     - (Link to TODO.md or high-level future plans)
 
 This project adheres to the instructions in `AGENTS.md` where applicable.
 Please ensure any contributions also follow these guidelines.
 
 ### Styling
+
 - Custom CSS for editor, sidebar, buttons, inputs, lists, notifications.
 - Flexbox layout, minimal typography, 5 primary colors, light/dark themes.
 - Example:
   ```css
-  body { font-family: Arial, sans-serif; margin: 0; }
-  .editor { padding: 16px; border: 1px solid #ccc; }
-  .tag { background: #e0f7fa; padding: 2px 8px; border-radius: 4px; }
-  .sidebar { width: 280px; border-left: 1px solid #eee; padding: 8px; }
-  .button { background: #007bff; color: white; padding: 8px; border-radius: 4px; }
+  body {
+  	font-family: Arial, sans-serif;
+  	margin: 0;
+  }
+  .editor {
+  	padding: 16px;
+  	border: 1px solid #ccc;
+  }
+  .tag {
+  	background: #e0f7fa;
+  	padding: 2px 8px;
+  	border-radius: 4px;
+  }
+  .sidebar {
+  	width: 280px;
+  	border-left: 1px solid #eee;
+  	padding: 8px;
+  }
+  .button {
+  	background: #007bff;
+  	color: white;
+  	padding: 8px;
+  	border-radius: 4px;
+  }
   ```

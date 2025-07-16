@@ -5,6 +5,7 @@ A lightweight, client-side Progressive Web App (PWA) for decentralized note-taki
 ## Features
 
 ### Instant Messaging
+
 - Using secure Nostr Direct Messages (DM)
 - Buddy list
 - Discussions
@@ -12,6 +13,7 @@ A lightweight, client-side Progressive Web App (PWA) for decentralized note-taki
 - Account creation wizard
 
 ### Note-Taking with Semantic Structure
+
 - **Rich Text Editor**:
   - Powered by Tiptap for extensible editing.
   - Supports bold, italic, bulleted/numbered lists, and hyperlinks.
@@ -38,6 +40,7 @@ A lightweight, client-side Progressive Web App (PWA) for decentralized note-taki
   - Export/import notes as JSON for backups or migration.
 
 ### Ontology System
+
 - **Definition**:
   - User-editable taxonomy of concepts and relationships (e.g., `#AI > #MachineLearning > #NLP`), stored as a JSON tree.
   - Concepts have `label` (e.g., `#Project`) and optional `attributes` (e.g., `due::date`).
@@ -56,6 +59,7 @@ A lightweight, client-side Progressive Web App (PWA) for decentralized note-taki
   - Shareable via Nostr as public or private events; importable by other users.
 
 ### Network Matching
+
 - **Nostr Integration**:
   - Publish notes as public Nostr events or encrypted private shares (NIP-04).
   - User identity via locally stored Nostr keypair, generated during onboarding.
@@ -88,7 +92,7 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
   - **Google Gemini**:
     - Obtain an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
     - In Notention's AI settings, enter your Gemini API Key.
-  - *Note*: You can configure one or both. The application may prioritize Gemini if both are available, unless otherwise specified.
+  - _Note_: You can configure one or both. The application may prioritize Gemini if both are available, unless otherwise specified.
 - **Features**:
   - **Ontology Suggestions**: In the Ontology Editor, use the "AI Suggest" button to get ideas for new concepts or relationships based on your existing ontology and optional context you provide.
   - **Auto-tagging**: While editing a note, use the "Auto-tag" button in the toolbar to let AI suggest relevant tags based on the note's content and your ontology.
@@ -98,6 +102,7 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
 - **Sharing AI Results**: Users with AI support can share usable results (e.g., AI-assisted tags on a published note) with other users, even those not using AI features.
 
 ### Client-Side PWA
+
 - **Offline-First**:
   - Service Workers cache assets for offline use.
   - Notes and ontology saved locally, synced to Nostr when online.
@@ -115,6 +120,7 @@ Notention can leverage local or cloud-based AI models to provide intelligent fea
   - Timestamps for conflict-free versioning.
 
 ### Privacy and Security
+
 - **Local Storage**: Notes and ontology in IndexedDB via localforage.
 - **Encryption**: Private Nostr shares encrypted with NIP-04 (secp256k1).
 - **Sanitization**: DOMPurify prevents XSS in rich text.

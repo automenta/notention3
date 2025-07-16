@@ -1,5 +1,6 @@
 import { Router } from './Router';
 import { Sidebar } from './Sidebar';
+import { routes } from './routes';
 import './NoteEditor';
 import './NotesList';
 import './OntologyEditor';
@@ -77,14 +78,7 @@ export class NotentionApp extends HTMLElement {
         <notention-sidebar></notention-sidebar>
         <div class="main-content">
           <notention-router>
-            <notention-route path="/notes" component="notention-notes-list"></notention-route>
-            <notention-route path="/note" component="notention-note-editor"></notention-route>
-            <notention-route path="/ontology" component="notention-ontology-editor"></notention-route>
-            <notention-route path="/network" component="notention-network-panel"></notention-route>
-            <notention-route path="/settings" component="notention-settings"></notention-route>
-            <notention-route path="/contacts" component="notention-contact-list"></notention-route>
-            <notention-route path="/chat" component="notention-chat-panel"></notention-route>
-            <notention-route path="/" component="notention-notes-list"></notention-route> <!-- Default route -->
+            ${routes.map(route => `<notention-route path="${route.path}" component="${route.component}"></notention-route>`).join('')}
           </notention-router>
         </div>
       </div>

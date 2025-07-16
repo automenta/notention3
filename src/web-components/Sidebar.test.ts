@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import { useAppStore } from '../store';
 import { Note, Folder } from '../../shared/types';
+import { NotentionApp } from './NotentionApp';
 import './Sidebar';
 import './NotesList';
 
@@ -130,6 +131,7 @@ describe('Sidebar Component', () => {
       notes: mockNotes,
       folders: mockFolders,
       searchFilters: { folderId: undefined },
+      sidebarTab: 'notes',
       createNote: vi.fn(),
       loadFolders: vi.fn(),
       setSearchFilter: vi.fn(),
@@ -140,11 +142,12 @@ describe('Sidebar Component', () => {
     });
     (useAppStore.getState as vi.Mock).mockImplementation(mockGetState);
 
+    const app = new NotentionApp();
+    document.body.innerHTML = '';
+    document.body.appendChild(app);
 
-    document.body.innerHTML = '<div><notention-app></notention-app></div>';
-
-    // Wait for a specific element that indicates rendering is complete
-    await screen.findByText('Notention', {}, { timeout: 3000 });
+    // Wait for the component to be fully rendered
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     sidebarElement = document.querySelector('notention-sidebar')! as any;
     notesListElement = document.querySelector('notention-notes-list')! as any;

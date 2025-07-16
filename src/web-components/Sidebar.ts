@@ -1,6 +1,7 @@
 import { NoteService } from '../services/NoteService.js';
 import { useAppStore } from '../store';
 import { Folder } from '../../shared/types';
+import { routes } from './routes.js';
 import './Button.ts'; // Ensure button is imported
 
 export class Sidebar extends HTMLElement {
@@ -105,23 +106,14 @@ export class Sidebar extends HTMLElement {
 
   private _handleTabClick(tab: string) {
     useAppStore.getState().setSidebarTab(tab as any);
-    let path = '/notes';
-    if (tab === 'ontology') {
-      path = '/ontology';
-    } else if (tab === 'network') {
-      path = '/network';
-    } else if (tab === 'contacts') {
-      path = '/contacts';
-    } else if (tab === 'chats') {
-      path = '/chat';
-    } else if (tab === 'settings') {
-      path = '/settings';
+    const route = routes.find(r => r.title.toLowerCase() === tab);
+    if (route) {
+      this.dispatchEvent(new CustomEvent('notention-navigate', {
+        detail: { path: route.path },
+        bubbles: true,
+        composed: true,
+      }));
     }
-    this.dispatchEvent(new CustomEvent('notention-navigate', {
-      detail: { path: path },
-      bubbles: true,
-      composed: true,
-    }));
   }
 
   private async _handleNewNote() {
@@ -334,12 +326,9 @@ export class Sidebar extends HTMLElement {
         <h1>Notention</h1>
       </div>
       <div class="tabs">
-        <button class="tab-button ${this.activeTab === 'notes' ? 'active' : ''}" data-tab="notes">Notes</button>
-        <button class="tab-button ${this.activeTab === 'ontology' ? 'active' : ''}" data-tab="ontology">Ontology</button>
-        <button class="tab-button ${this.activeTab === 'network' ? 'active' : ''}" data-tab="network">Network</button>
-        <button class="tab-button ${this.activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts</button>
-        <button class="tab-button ${this.activeTab === 'chats' ? 'active' : ''}" data-tab="chats">Chats</button>
-        <button class="tab-button ${this.activeTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</button>
+        ${routes.filter(r => r.title !== 'Note' && r.path !== '/').map(route => `
+          <button class="tab-button ${this.activeTab === route.title.toLowerCase() ? 'active' : ''}" data-tab="${route.title.toLowerCase()}">${route.title}</button>
+        `).join('')}
       </div>
       ${this.activeTab === 'notes' ? `
         <notention-button class="new-note-button">New Note</notention-button>

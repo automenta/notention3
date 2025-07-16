@@ -262,7 +262,6 @@ describe('AIService', () => {
       expect(vector).toEqual([]);
     });
   });
-  });
 
     it('should return empty array if no embedding model is active', async () => {
       setMockStoreUserProfile({ aiEnabled: true }); // Enabled, but no endpoint/key

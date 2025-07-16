@@ -105,6 +105,14 @@ export class Sidebar extends HTMLElement {
   }
 
   private _handleTabClick(tab: string) {
+    if (tab === 'profile') {
+      this.dispatchEvent(new CustomEvent('notention-navigate', {
+        detail: { path: '/profile' },
+        bubbles: true,
+        composed: true,
+      }));
+      return;
+    }
     useAppStore.getState().setSidebarTab(tab as any);
     const route = routes.find(r => r.title.toLowerCase() === tab);
     if (route) {
@@ -114,6 +122,15 @@ export class Sidebar extends HTMLElement {
         composed: true,
       }));
     }
+  }
+
+  private _navigateTo(event: Event, path: string) {
+    event.preventDefault();
+    this.dispatchEvent(new CustomEvent('notention-navigate', {
+      detail: { path },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private async _handleNewNote() {

@@ -9,6 +9,7 @@ import './Settings';
 import './Route';
 import './ChatPanel';
 import './ContactList';
+import './UserProfile';
 
 export class NotentionApp extends HTMLElement {
   private router: Router | null = null;

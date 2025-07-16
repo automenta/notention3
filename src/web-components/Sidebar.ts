@@ -110,6 +110,10 @@ export class Sidebar extends HTMLElement {
       path = '/ontology';
     } else if (tab === 'network') {
       path = '/network';
+    } else if (tab === 'contacts') {
+      path = '/contacts';
+    } else if (tab === 'chats') {
+      path = '/chat';
     } else if (tab === 'settings') {
       path = '/settings';
     }
@@ -333,6 +337,8 @@ export class Sidebar extends HTMLElement {
         <button class="tab-button ${this.activeTab === 'notes' ? 'active' : ''}" data-tab="notes">Notes</button>
         <button class="tab-button ${this.activeTab === 'ontology' ? 'active' : ''}" data-tab="ontology">Ontology</button>
         <button class="tab-button ${this.activeTab === 'network' ? 'active' : ''}" data-tab="network">Network</button>
+        <button class="tab-button ${this.activeTab === 'contacts' ? 'active' : ''}" data-tab="contacts">Contacts</button>
+        <button class="tab-button ${this.activeTab === 'chats' ? 'active' : ''}" data-tab="chats">Chats</button>
         <button class="tab-button ${this.activeTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</button>
       </div>
       ${this.activeTab === 'notes' ? `
@@ -354,6 +360,7 @@ export class Sidebar extends HTMLElement {
           ${this.activeTab === 'settings' ? `<notention-settings></notention-settings>` : ''}
         </div>
       `}
+      ${this.activeTab === 'contacts' ? `<notention-contact-list></notention-contact-list>` : ''}
     `;
 
     this.setupEventListeners(); // Re-attach event listeners after re-rendering

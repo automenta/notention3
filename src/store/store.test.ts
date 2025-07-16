@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useAppStore } from './index'; // Assuming default export from store/index.ts
 import { DBService } from '../services/db';
+
+// Mock DOMPurify as it's used in syncWithNostr
+const mockSanitize = vi.fn(html => html);
+vi.mock('dompurify', () => ({
+  default: {
+    sanitize: mockSanitize,
+  }
+}));
 import { NoteService } from '../services/NoteService';
 import { NostrService, nostrService } from '../services/NostrService'; // Import instance too
 import { OntologyService } from '../services/ontology';
@@ -22,24 +30,15 @@ vi.mock('../services/db');
 vi.mock('../services/NoteService');
 vi.mock('../services/NostrService');
 vi.mock('../services/ontology');
-// Mock DOMPurify as it's used in syncWithNostr
-const mockSanitize = vi.fn(html => html);
-vi.mock('dompurify', () => ({
-  default: {
-    sanitize: mockSanitize,
+
+vi.mock('../services/FolderService', () => ({
+  FolderService: {
+    createFolder: vi.fn(),
+    updateFolder: vi.fn(),
+    deleteFolder: vi.fn(),
+    getAllFolders: vi.fn().mockResolvedValue([]),
   }
 }));
-
-vi.mock('../services/FolderService', () => {
-  return {
-    FolderService: {
-      createFolder: vi.fn().mockResolvedValue(mockNewFolderData),
-      updateFolder: vi.fn(),
-      deleteFolder: vi.fn(),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    }
-  };
-});
 
 
 const initialNotes: Record<string, Note> = {};
@@ -91,10 +90,24 @@ describe('App Store', () => {
 
     // Default mock implementations for services
     vi.mocked(DBService.getAllNotes).mockResolvedValue([]);
+    vi.mocked(NoteService.getNotes).mockResolvedValue([]);
+    vi.mocked(NoteService.getNotes).mockResolvedValue([]);
+    vi.mocked(FolderService.getAllFolders).mockResolvedValue([]);
+    vi.mocked(DBService.getAllNotes).mockResolvedValue([]);
+    (NoteService.getNotes as vi.Mock).mockResolvedValue([]);
+    (FolderService.getAllFolders as vi.Mock).mockResolvedValue([]);
+    (DBService.getAllTemplates as vi.Mock).mockResolvedValue([]);
+    (DBService.getPendingNoteSyncOps as vi.Mock).mockResolvedValue([]);
+    (NoteService.getNotes as vi.Mock).mockResolvedValue([]);
+    (DBService.getAllNotes as vi.Mock).mockResolvedValue([]);
+    (NoteService.getNotes as vi.Mock).mockResolvedValue([]);
+    (DBService.getAllFolders as vi.Mock).mockResolvedValue([]);
+    (DBService.getAllTemplates as vi.Mock).mockResolvedValue([]);
     vi.mocked(DBService.getOntology).mockResolvedValue(initialOntology);
     vi.mocked(DBService.getUserProfile).mockResolvedValue(initialUserProfile);
     vi.mocked(DBService.getAllFolders).mockResolvedValue([]);
     vi.mocked(DBService.getAllTemplates).mockResolvedValue([]);
+    vi.mocked(DBService.getPendingNoteSyncOps).mockResolvedValue([]);
     vi.mocked(DBService.getDefaultOntology).mockResolvedValue(initialOntology);
     vi.mocked(DBService.getDefaultTemplates).mockResolvedValue([]);
     vi.mocked(DBService.saveNote).mockResolvedValue(undefined);
@@ -299,7 +312,7 @@ describe('App Store', () => {
     // DBService.saveUserProfile is already mocked to resolve undefined
     // The action directly calls DBService.saveUserProfile and then set({ userProfile })
 
-    await updateUserProfile(profileUpdates as UserProfile); // Cast as UserProfile as the action expects full
+    await useAppStore.getState().updateUserProfile(profileUpdates);
 
     const state = useAppStore.getState();
     expect(DBService.saveUserProfile).toHaveBeenCalledWith(expect.objectContaining({
@@ -479,7 +492,21 @@ describe('App Store', () => {
         noteId: 'deletedNote1', action: 'delete', timestamp: new Date(), nostrEventId: noteToDeleteEventId
       };
       vi.mocked(DBService.getPendingNoteSyncOps).mockResolvedValue([pendingOp]);
+      vi.mocked(DBService.getNote).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
       vi.mocked(DBService.removeNoteFromSyncQueue).mockResolvedValue(undefined);
+      vi.mocked(nostrService.publishDeletionEvent).mockResolvedValue(['deletionEventId']);
+      useAppStore.setState({ notes: { 'deletedNote1': { id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId } } });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (nostrService.publishDeletionEvent as vi.Mock).mockResolvedValue(['deletionEventId']);
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
+      (DBService.getNote as vi.Mock).mockResolvedValue({ id: 'deletedNote1', title: 'deleted', content: '', tags: [], values: {}, fields: {}, status: 'draft', createdAt: new Date(), updatedAt: new Date(), nostrSyncEventId: noteToDeleteEventId });
 
       await state.syncWithNostr();
 

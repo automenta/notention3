@@ -6,6 +6,8 @@ import './OntologyEditor';
 import './NetworkPanel';
 import './Settings';
 import './Route';
+import './ChatPanel';
+import './ContactList';
 
 export class NotentionApp extends HTMLElement {
   private router: Router | null = null;
@@ -80,6 +82,8 @@ export class NotentionApp extends HTMLElement {
             <notention-route path="/ontology" component="notention-ontology-editor"></notention-route>
             <notention-route path="/network" component="notention-network-panel"></notention-route>
             <notention-route path="/settings" component="notention-settings"></notention-route>
+            <notention-route path="/contacts" component="notention-contact-list"></notention-route>
+            <notention-route path="/chat" component="notention-chat-panel"></notention-route>
             <notention-route path="/" component="notention-notes-list"></notention-route> <!-- Default route -->
           </notention-router>
         </div>

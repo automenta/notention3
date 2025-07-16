@@ -1,9 +1,10 @@
 import { useAppStore } from '../store';
-import { Match } from '../../shared/types';
+import { Match, Note } from '../../shared/types';
 
 export class NetworkPanel extends HTMLElement {
   private connected: boolean = false;
   private matches: Match[] = [];
+  private notes: { [id: string]: Note } = {};
   private unsubscribe: () => void = () => {};
 
   constructor() {
@@ -16,15 +17,29 @@ export class NetworkPanel extends HTMLElement {
       (state) => {
         this.connected = state.nostrConnected;
         this.matches = state.matches;
+        this.notes = state.notes;
         this.render();
       },
-      (state) => [state.nostrConnected, state.matches]
+      (state) => [state.nostrConnected, state.matches, state.notes]
     );
     this.render();
   }
 
   disconnectedCallback() {
     this.unsubscribe();
+  }
+
+  private _handleViewNote(noteId: string) {
+    this.dispatchEvent(new CustomEvent('notention-navigate', {
+      detail: { path: `/note?id=${noteId}` },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private _handleContactAuthor(author: string) {
+    // This will be implemented in a later step
+    alert(`Contacting ${author}...`);
   }
 
   render() {
@@ -61,6 +76,9 @@ export class NetworkPanel extends HTMLElement {
         font-size: 0.9em;
         color: var(--color-muted-foreground);
       }
+      .match-actions {
+        margin-top: 8px;
+      }
     `;
 
     this.shadowRoot.innerHTML = `
@@ -72,16 +90,42 @@ export class NetworkPanel extends HTMLElement {
         </p>
         <h3>Matches</h3>
         <ul class="matches-list">
-          ${this.matches.map(match => `
-            <li class="match-item">
-              <p class="match-author">From: ${match.targetAuthor}</p>
-              <p class="match-similarity">Similarity: ${match.similarity.toFixed(2)}</p>
-              <p>Shared Tags: ${match.sharedTags.join(', ')}</p>
-            </li>
-          `).join('')}
+          ${this.matches.map(match => {
+            const note = this.notes[match.localNoteId];
+            return `
+              <li class="match-item">
+                <p class="match-author">From: ${match.targetAuthor}</p>
+                <p><strong>Matched Note:</strong> ${note?.title || 'Unknown'}</p>
+                <p class="match-similarity">Similarity: ${match.similarity.toFixed(2)}</p>
+                <p>Shared Tags: ${match.sharedTags.join(', ')}</p>
+                <div class="match-actions">
+                  <button class="view-note-button" data-note-id="${match.targetNoteId}">View Note</button>
+                  <button class="contact-author-button" data-author="${match.targetAuthor}">Contact Author</button>
+                </div>
+              </li>
+            `;
+          }).join('')}
         </ul>
       </div>
     `;
+
+    this.shadowRoot.querySelectorAll('.view-note-button').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const noteId = (e.target as HTMLButtonElement).dataset.noteId;
+        if (noteId) {
+          this._handleViewNote(noteId);
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('.contact-author-button').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const author = (e.target as HTMLButtonElement).dataset.author;
+        if (author) {
+          this._handleContactAuthor(author);
+        }
+      });
+    });
   }
 }
 

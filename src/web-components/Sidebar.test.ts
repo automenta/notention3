@@ -121,14 +121,33 @@ describe('Sidebar Component', () => {
   let notesListElement: HTMLElement & { updateComplete: Promise<unknown> };
 
   beforeEach(async () => {
-    document.body.innerHTML = '<notention-sidebar></notention-sidebar>';
-    sidebarElement = document.querySelector('notention-sidebar')! as any;
-    sidebarElement.activeTab = 'notes';
-    await sidebarElement.updateComplete; // Wait for sidebar to render with notes tab active
+    // Reset mocks and state before each test
+    vi.clearAllMocks();
+    // Use a fresh mock for each test to avoid state leakage
+    const mockNotes: { [id: string]: Note } = {};
+    const mockFolders: { [id: string]: Folder } = {};
+    const mockGetState = () => ({
+      notes: mockNotes,
+      folders: mockFolders,
+      searchFilters: { folderId: undefined },
+      createNote: vi.fn(),
+      loadFolders: vi.fn(),
+      setSearchFilter: vi.fn(),
+      createFolder: vi.fn(),
+      updateFolder: vi.fn(),
+      deleteFolder: vi.fn(),
+      loadNotes: vi.fn(),
+    });
+    (useAppStore.getState as vi.Mock).mockImplementation(mockGetState);
 
-    // Use waitFor to ensure notesListElement is in the DOM
-    notesListElement = await waitFor(() => document.querySelector('notention-notes-list')!) as any;
-    await notesListElement.updateComplete; // Wait for notes list to render its initial state
+
+    document.body.innerHTML = '<div><notention-app></notention-app></div>';
+
+    // Wait for a specific element that indicates rendering is complete
+    await screen.findByText('Notention', {}, { timeout: 3000 });
+
+    sidebarElement = document.querySelector('notention-sidebar')! as any;
+    notesListElement = document.querySelector('notention-notes-list')! as any;
   });
 
   afterEach(() => {

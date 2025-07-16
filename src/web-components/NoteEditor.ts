@@ -3,6 +3,9 @@ import { Note } from '../../shared/types';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { SemanticTag } from '../extensions/SemanticTag';
+import Mention from '@tiptap/extension-mention';
+import { suggestion } from '../lib/suggestion';
+import tippy from 'tippy.js';
 
 export class NoteEditor extends HTMLElement {
   private note: Note | null = null;
@@ -46,7 +49,16 @@ export class NoteEditor extends HTMLElement {
 
     this.editor = new Editor({
       element: editorElement,
-      extensions: [StarterKit, SemanticTag],
+      extensions: [
+        StarterKit,
+        SemanticTag,
+        Mention.configure({
+          HTMLAttributes: {
+            class: 'mention',
+          },
+          suggestion: suggestion(this.shadowRoot as ShadowRoot),
+        }),
+      ],
       content: this.note?.content || '',
       onUpdate: ({ editor }) => {
         if (!this.note) return;
@@ -65,6 +77,22 @@ export class NoteEditor extends HTMLElement {
       const tag = prompt('Enter tag:');
       if (tag) {
         this.editor?.chain().focus().setSemanticTag(tag).run();
+      }
+    });
+    this.shadowRoot?.querySelector('.key-value-button')?.addEventListener('click', () => {
+      const key = prompt('Enter key:');
+      if (!key) return;
+      const value = prompt('Enter value:');
+      if (value) {
+        this.editor?.chain().focus().insertContent(`${key}::${value}`).run();
+      }
+    });
+    this.shadowRoot?.querySelector('.template-button')?.addEventListener('click', () => {
+      const template = prompt('Select a template:\n1. Meeting Note\n2. Todo List');
+      if (template === '1') {
+        this.editor?.chain().focus().insertContent('<h2>Meeting Note</h2><p><strong>Date:</strong></p><p><strong>Attendees:</strong></p><p><strong>Agenda:</strong></p><p><strong>Notes:</strong></p>').run();
+      } else if (template === '2') {
+        this.editor?.chain().focus().insertContent('<h2>Todo List</h2><ul><li><p></p></li></ul>').run();
       }
     });
   }
@@ -114,6 +142,11 @@ export class NoteEditor extends HTMLElement {
         padding: 2px 8px;
         border-radius: 4px;
       }
+      .mention {
+        background-color: #e0f7fa;
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
     `;
 
     if (!this.note) {
@@ -136,6 +169,8 @@ export class NoteEditor extends HTMLElement {
           <button class="bullet-list-button">Bullet List</button>
           <button class="ordered-list-button">Ordered List</button>
           <button class="tag-button">Add Tag</button>
+          <button class="key-value-button">Add Key-Value</button>
+          <button class="template-button">Apply Template</button>
         </div>
         <div class="content-editor"></div>
       </div>

@@ -97,10 +97,13 @@ describe('AIService', () => {
     (OllamaEmbeddings as vi.Mock).mockImplementation(() => mockOllamaEmbeddingsInstance);
     (ChatGoogleGenerativeAI as vi.Mock).mockImplementation(() => mockGeminiInstance);
     (GoogleGenerativeAIEmbeddings as vi.Mock).mockImplementation(() => mockGeminiEmbeddingsInstance);
-    (StringOutputParser as vi.Mock).mockImplementation(() => ({
+    (StringOutputParser as vi.Mock).mockImplementation(() => {
+      const mockParserInstance = {
         pipe: vi.fn().mockReturnThis(),
         invoke: vi.fn(),
-    }));
+      };
+      return mockParserInstance;
+    });
 
 
     // Reset instance method mocks
@@ -233,7 +236,24 @@ describe('AIService', () => {
         });
       });
     });
+
+    it('should handle errors gracefully for getSummarization', async () => {
+        setMockStoreUserProfile({ aiEnabled: true, geminiApiKey: 'gemini-key', aiProviderPreference: 'gemini' });
+        vi.mocked(mockGeminiInstance.invoke).mockRejectedValue(new Error('AI API Error'));
+        const result = await aiService.getSummarization('content');
+        expect(result).toEqual('');
+        expect(console.error).toHaveBeenCalledWith('Error getting summarization:', expect.any(Error));
+      });
+    });
   });
+
+  it('should handle errors gracefully for getSummarization', async () => {
+      setMockStoreUserProfile({ aiEnabled: true, geminiApiKey: 'gemini-key', aiProviderPreference: 'gemini' });
+      vi.mocked(mockGeminiInstance.invoke).mockRejectedValue(new Error('AI API Error'));
+      const result = await aiService.getSummarization('content');
+      expect(result).toEqual('');
+      expect(console.error).toHaveBeenCalledWith('Error getting summarization:', expect.any(Error));
+    });
 
   describe('getEmbeddingVector', () => {
     it('should return empty array if AI is disabled', async () => {
@@ -241,6 +261,8 @@ describe('AIService', () => {
       const vector = await aiService.getEmbeddingVector("test text");
       expect(vector).toEqual([]);
     });
+  });
+  });
 
     it('should return empty array if no embedding model is active', async () => {
       setMockStoreUserProfile({ aiEnabled: true }); // Enabled, but no endpoint/key

@@ -1925,7 +1925,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 				since,
 				relays
 			);
-			if (remoteDeletionEvents.length > 0) {
+			if (remoteDeletionEvents && remoteDeletionEvents.length > 0) {
 				console.log(
 					`Processing ${remoteDeletionEvents.length} remote deletion events.`
 				);

@@ -805,6 +805,9 @@ export class NostrService {
 		);
 		try {
 			const events = await this.pool.list(relaysToUse, filters);
+			if (!events) {
+				return [];
+			}
 			// Sort by created_at descending to process more recent deletions first if needed, though order might not strictly matter.
 			return events.sort((a, b) => b.created_at - a.created_at);
 		} catch (error) {

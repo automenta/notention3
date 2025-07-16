@@ -8,6 +8,7 @@ import './Settings.ts';
 import './Route.ts';
 import './Router.ts';
 import './Sidebar.ts';
+import './FolderTree.ts';
 import './ChatPanel.ts';
 import './ContactList.ts';
 import './AccountWizard.ts';

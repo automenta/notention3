@@ -1,21 +1,18 @@
 import { NoteService } from '../services/NoteService.js';
 import { useAppStore } from '../store';
-import { Folder } from '../../shared/types';
 import { routes } from './routes.js';
-import './Button.ts'; // Ensure button is imported
+import './Button.ts';
+import './FolderTree.ts';
 
 export class Sidebar extends HTMLElement {
 	private activeTab: string = 'notes';
-	private folders: Folder[] = [];
-	private activeFolderId: string | undefined = undefined;
 
 	private unsubscribe: () => void = () => {};
 
 	// Bound event handlers
 	private _boundHandleTabClick: (e: Event) => void;
 	private _boundHandleNewNote: (e: Event) => void;
-	private _boundHandleCreateFolder: (e: Event) => void;
-	private _boundHandleFolderActions: (e: Event) => void;
+	private _boundSidebarTabClick: (e: Event) => void;
 
 	constructor() {
 		super();
@@ -24,31 +21,34 @@ export class Sidebar extends HTMLElement {
 		// Bind methods to 'this'
 		this._boundHandleTabClick = this._handleTabClick.bind(this);
 		this._boundHandleNewNote = this._handleNewNote.bind(this);
-		this._boundHandleCreateFolder = this._handleCreateFolder.bind(this);
-		this._boundHandleFolderActions = this._handleFolderActions.bind(this);
+		this._boundSidebarTabClick = this._handleSidebarTabClick.bind(this);
 	}
 
 	connectedCallback() {
 		this.unsubscribe = useAppStore.subscribe(
 			state => {
-				const foldersArray = Object.values(state.folders).sort((a, b) =>
-					a.name.localeCompare(b.name)
-				);
-				this.folders = foldersArray;
-				this.activeFolderId = state.searchFilters.folderId;
 				this.activeTab = state.sidebarTab;
 				this.render(); // Re-render when store state changes
 			},
-			state => [state.folders, state.searchFilters.folderId, state.sidebarTab]
+			state => state.sidebarTab
 		);
 
 		this.render();
 		useAppStore.getState().loadFolders();
+
+		this.addEventListener(
+			'notention-sidebar-tab-click',
+			this._boundSidebarTabClick
+		);
 	}
 
 	disconnectedCallback() {
 		this.unsubscribe();
 		this.removeEventListeners();
+		this.removeEventListener(
+			'notention-sidebar-tab-click',
+			this._boundSidebarTabClick
+		);
 	}
 
 	private setupEventListeners() {
@@ -61,12 +61,6 @@ export class Sidebar extends HTMLElement {
 		this.shadowRoot
 			.querySelector('.new-note-button')
 			?.addEventListener('click', this._boundHandleNewNote);
-		this.shadowRoot
-			.querySelector('.create-folder-button')
-			?.addEventListener('click', this._boundHandleCreateFolder);
-		this.shadowRoot
-			.querySelector('.folder-section')
-			?.addEventListener('click', this._boundHandleFolderActions);
 	}
 
 	private removeEventListeners() {
@@ -79,37 +73,11 @@ export class Sidebar extends HTMLElement {
 		this.shadowRoot
 			.querySelector('.new-note-button')
 			?.removeEventListener('click', this._boundHandleNewNote);
-		this.shadowRoot
-			.querySelector('.create-folder-button')
-			?.removeEventListener('click', this._boundHandleCreateFolder);
-		this.shadowRoot
-			.querySelector('.folder-section')
-			?.removeEventListener('click', this._boundHandleFolderActions);
 	}
 
-	private _handleFolderActions(e: Event) {
-		const target = e.target as HTMLElement;
-		const folderItem = target.closest('.folder-item');
-
-		if (folderItem) {
-			const folderId = folderItem.dataset.folderId;
-			if (!folderId) return;
-
-			if (
-				target.classList.contains('folder-label') ||
-				target.closest('.folder-label')
-			) {
-				this._handleFolderClick(folderId);
-			} else if (target.closest('.edit-folder-button')) {
-				const folderName = folderItem.dataset.folderName || '';
-				this._handleEditFolder(folderId, folderName);
-			} else if (target.closest('.delete-folder-button')) {
-				const folderName = folderItem.dataset.folderName || '';
-				this._handleDeleteFolder(folderId, folderName);
-			}
-		} else if (target.closest('.unfiled-notes-item')) {
-			this._handleFolderClick(undefined);
-		}
+	private _handleSidebarTabClick(e: Event) {
+		const customEvent = e as CustomEvent;
+		this._handleTabClick(customEvent.detail.tab);
 	}
 
 	private _handleTabClick(e_or_tab: Event | string) {
@@ -167,133 +135,6 @@ export class Sidebar extends HTMLElement {
 		);
 	}
 
-	private async _handleCreateFolder() {
-		const folderSection = this.shadowRoot?.querySelector('.folder-section');
-		if (!folderSection) return;
-
-		// Avoid creating multiple input fields
-		if (this.shadowRoot?.querySelector('.new-folder-input')) return;
-
-		const inputContainer = document.createElement('div');
-		inputContainer.className = 'new-folder-container';
-		const input = document.createElement('input');
-		input.type = 'text';
-		input.placeholder = 'New folder name...';
-		input.className = 'new-folder-input';
-		inputContainer.appendChild(input);
-
-		folderSection.appendChild(inputContainer);
-		input.focus();
-
-		const saveOrCancel = async (event: FocusEvent | KeyboardEvent) => {
-			if (
-				event instanceof KeyboardEvent &&
-				event.key !== 'Enter' &&
-				event.key !== 'Escape'
-			) {
-				return;
-			}
-
-			const folderName = input.value.trim();
-			if (folderName) {
-				await useAppStore.getState().createFolder(folderName);
-			}
-
-			// The store update will trigger a re-render which will remove the input
-		};
-
-		input.addEventListener('blur', saveOrCancel);
-		input.addEventListener('keydown', saveOrCancel);
-	}
-
-	private _handleFolderClick(folderId: string | undefined) {
-		useAppStore.getState().setSearchFilter('folderId', folderId);
-		if (this.activeTab !== 'notes') {
-			this._handleTabClick('notes');
-		}
-	}
-
-	private async _handleEditFolder(folderId: string, currentName: string) {
-		const folderItem = this.shadowRoot?.querySelector(
-			`[data-folder-id="${folderId}"]`
-		);
-		const folderLabel = folderItem?.querySelector('.folder-label');
-		if (!folderLabel) return;
-
-		const input = document.createElement('input');
-		input.type = 'text';
-		input.value = currentName;
-		input.className = 'folder-name-input';
-
-		folderLabel.innerHTML = '';
-		folderLabel.appendChild(input);
-		input.focus();
-
-		const saveOrCancel = async (event: FocusEvent | KeyboardEvent) => {
-			if (
-				event instanceof KeyboardEvent &&
-				event.key !== 'Enter' &&
-				event.key !== 'Escape'
-			) {
-				return;
-			}
-
-			const newName = input.value.trim();
-			if (newName && newName !== currentName) {
-				await useAppStore.getState().updateFolder(folderId, { name: newName });
-			}
-
-			// Re-render to restore the original state display
-			this.render();
-		};
-
-		input.addEventListener('blur', saveOrCancel);
-		input.addEventListener('keydown', saveOrCancel);
-	}
-
-	private async _handleDeleteFolder(folderId: string, folderName: string) {
-		if (
-			confirm(
-				`Are you sure you want to delete the folder "${folderName}"?\n\nThis will also unassign all notes within this folder and its subfolders.`
-			)
-		) {
-			await useAppStore.getState().deleteFolder(folderId);
-		}
-	}
-
-	private _renderFolderTree(
-		folders: Folder[],
-		parentId: string | undefined = undefined,
-		level: number = 0
-	): string {
-		const childFolders = folders.filter(f => f.parentId === parentId);
-		if (childFolders.length === 0) return '';
-
-		return `
-      <ul class="folder-list" style="padding-left: ${level * 15}px;">
-        ${childFolders
-					.map(
-						folder => `
-          <li class="folder-item ${this.activeFolderId === folder.id ? 'active' : ''}" data-folder-id="${folder.id}" data-folder-name="${folder.name}">
-            <div class="folder-label">
-              <span class="folder-name">${folder.name}</span>
-            </div>
-            <div class="folder-actions">
-              <button class="icon-button edit-folder-button" title="Edit Folder">
-                ✏️
-              </button>
-              <button class="icon-button delete-folder-button" title="Delete Folder">
-                🗑️
-              </button>
-            </div>
-            ${this._renderFolderTree(folders, folder.id, level + 1)}
-          </li>
-        `
-					)
-					.join('')}
-      </ul>
-    `;
-	}
 
 	render() {
 		if (!this.shadowRoot) return;
@@ -348,94 +189,11 @@ export class Sidebar extends HTMLElement {
         overflow-y: auto;
         padding: 16px;
       }
-      .new-note-button, .create-folder-button {
+      .new-note-button {
         width: 100%;
         margin-top: 8px;
       }
-      .folder-section {
-        margin-top: 16px;
-      }
-      .folder-section h3 {
-        margin-top: 0;
-        margin-bottom: 10px;
-        color: var(--color-sidebar-foreground);
-      }
-      .folder-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      .folder-item {
-        padding: 8px;
-        cursor: pointer;
-        color: var(--color-muted-foreground);
-        transition: background-color 0.2s, color 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-radius: var(--radius-sm);
-      }
-      .folder-item:hover {
-        background-color: var(--color-accent);
-        color: var(--color-accent-foreground);
-      }
-      .folder-item.active {
-        background-color: var(--color-primary);
-        color: var(--color-primary-foreground);
-        font-weight: bold;
-      }
-      .folder-label {
-        flex-grow: 1;
-        padding-right: 5px;
-      }
-      .folder-actions {
-        display: none; /* Hidden by default */
-      }
-      .folder-item:hover .folder-actions {
-        display: flex; /* Show on hover */
-        gap: 5px;
-      }
-      .icon-button {
-        background: none;
-        border: none;
-        font-size: 1em;
-        cursor: pointer;
-        padding: 3px;
-        border-radius: var(--radius-sm);
-        transition: background-color 0.2s;
-        color: inherit;
-      }
-      .icon-button:hover {
-        background-color: rgba(255,255,255,0.2);
-      }
-      .unfiled-notes-item {
-        padding: 8px;
-        cursor: pointer;
-        color: var(--color-muted-foreground);
-        transition: background-color 0.2s, color 0.2s;
-        font-weight: normal;
-        border-radius: var(--radius-sm);
-      }
-      .unfiled-notes-item.active {
-        background-color: var(--color-primary);
-        color: var(--color-primary-foreground);
-        font-weight: bold;
-      }
-      .folder-name-input, .new-folder-input {
-        width: calc(100% - 10px);
-        padding: 4px;
-        border: 1px solid var(--color-primary);
-        border-radius: var(--radius-sm);
-        background-color: var(--color-input);
-        color: var(--color-foreground);
-      }
-      .new-folder-container {
-        padding: 8px 0;
-      }
     `;
-
-		const unfiledNotesActive =
-			this.activeFolderId === undefined && this.activeTab === 'notes';
 
 		this.shadowRoot.innerHTML = `
       <style>${styles}</style>
@@ -454,14 +212,7 @@ export class Sidebar extends HTMLElement {
       </div>
       <div class="content">
         <notention-button class="new-note-button">New Note</notention-button>
-        <div class="folder-section">
-          <h3>Folders</h3>
-          <div class="unfiled-notes-item ${unfiledNotesActive ? 'active' : ''}">
-            Unfiled Notes
-          </div>
-          ${this._renderFolderTree(this.folders, undefined)}
-          <notention-button class="create-folder-button">Create New Folder</notention-button>
-        </div>
+        <notention-folder-tree></notention-folder-tree>
       </div>
     `;
 
